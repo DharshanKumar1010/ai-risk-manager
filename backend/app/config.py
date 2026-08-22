@@ -6,6 +6,7 @@ environment or a local ``.env`` file that is never committed — see
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -16,6 +17,16 @@ PLACEHOLDER_JWT_SECRET = "dev-only-placeholder-change-me-before-deploy"
 # RFC 7518 section 3.2: an HMAC key for HS256 must be at least as long as the hash
 # output. PyJWT warns below this; we refuse below it.
 MIN_JWT_SECRET_BYTES = 32
+
+# Repo-root ``data/`` on a host checkout (backend/app/config.py -> up three -> repo root),
+# and ``/data`` inside the backend container, where ``/srv`` is the backend directory.
+# docker-compose sets DATA_DIR explicitly as well, so the deployment does not depend on
+# this path arithmetic being read correctly.
+DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+#: Where generated reports are written. Same path arithmetic as DEFAULT_DATA_DIR, so it
+#: resolves to repo-root/notebooks on a host checkout and /notebooks in the container.
+DEFAULT_REPORTS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
 
 
 class Settings(BaseSettings):
@@ -58,6 +69,25 @@ class Settings(BaseSettings):
     jwt_issuer: str = "riskiq"
     jwt_audience: str = "riskiq-api"
     jwt_expiry_seconds: int = Field(default=3600, ge=60, le=86_400)
+
+    data_dir: Path = Field(
+        default=DEFAULT_DATA_DIR,
+        description="Root of the dataset tree. Contents are gitignored; see data/README.md.",
+    )
+    reports_dir: Path = Field(
+        default=DEFAULT_REPORTS_DIR,
+        description="Where the pipeline writes the data-quality report.",
+    )
+
+    @property
+    def raw_data_dir(self) -> Path:
+        """Directory holding untouched dataset downloads (IEEE-CIS, PaySim)."""
+        return self.data_dir / "raw"
+
+    @property
+    def processed_data_dir(self) -> Path:
+        """Directory holding pipeline output — the parquet materialisations."""
+        return self.data_dir / "processed"
 
     @model_validator(mode="after")
     def reject_placeholder_secret_outside_local(self) -> "Settings":

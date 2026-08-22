@@ -46,10 +46,18 @@ services:
       DATABASE_URL: postgresql+asyncpg://riskiq:${POSTGRES_PASSWORD:-riskiq_local_dev}@postgres:5432/riskiq
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-placeholder-change-me-before-deploy}
+      DATA_DIR: /data
+      REPORTS_DIR: /notebooks
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/srv
+      # The datasets live outside the build context (they are gitignored and far larger
+      # than an image should carry), so they are mounted rather than COPYed. Read-write
+      # because the Phase 1 pipeline writes its parquet output to data/processed/.
+      - ./data:/data
+      # The pipeline writes its data-quality report here.
+      - ./notebooks:/notebooks
     depends_on:
       postgres:
         condition: service_healthy

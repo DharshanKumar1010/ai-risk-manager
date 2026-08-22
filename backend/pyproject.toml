@@ -20,9 +20,11 @@ select = ["E", "F", "I", "N", "W", "B"]
 known-first-party = ["app", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
-# Router and tier modules are documented stubs in Phase 0; their imports become used
-# as each phase implements them.
-"app/models/*.py" = ["F401"]
+# Table modules are imported for their side effect of registering against Base.metadata,
+# which is what makes them visible to Alembic autogeneration. Narrowed from the Phase 0
+# blanket `app/models/*.py` now that the table modules carry real, used imports — the
+# remaining tier stubs should not get a free pass on unused imports.
+"app/models/__init__.py" = ["F401"]
 
 # ---------------------------------------------------------------------------
 # Black — formatting.
@@ -45,6 +47,14 @@ pretty = true
 
 [[tool.mypy.overrides]]
 module = ["asyncpg.*", "redis.*"]
+ignore_missing_imports = true
+
+# scikit-learn ships no py.typed marker and has no stub package. Deliberately scoped to
+# sklearn alone: pandas is typed via pandas-stubs, so the data layer stays strictly
+# checked. If a call site is genuinely unworkable, use a targeted `# type: ignore[code]`
+# with a reason rather than widening this list.
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]

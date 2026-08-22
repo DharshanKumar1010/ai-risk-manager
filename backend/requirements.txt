@@ -17,6 +17,19 @@ greenlet>=3.1,<4.0
 redis>=5.2,<7.0
 pyjwt>=2.10,<3.0
 
+# --- Data and ML layer -------------------------------------------------------
+# Added in Phase 1 for the feature pipeline. The per-tier model libraries
+# (lightgbm, xgboost, torch, networkx, shap, econml) arrive with their own phases —
+# adding them now would inflate the image for code that does not exist yet.
+#
+# pandas 3.x is the current major: copy-on-write is enforced and string columns are
+# PyArrow-backed by default, which matters directly here — train_transaction.csv is
+# ~652MB with many low-cardinality string columns.
+numpy>=2.4,<3.0
+pandas>=3.0,<4.0
+pyarrow>=25.0,<27.0
+scikit-learn>=1.9,<2.0
+
 # --- Development and CI ------------------------------------------------------
 # Installed in the dev image and in CI. Phase 10 splits these out of the
 # production image to shrink the deployed artefact.
@@ -33,6 +46,10 @@ ruff>=0.8,<1.0
 # PYSEC-2026-2120 / PYSEC-2026-2121 (black) are fixed in 26.3.1.
 black>=26.3.1,<27.0
 mypy>=1.13,<2.0
+# Real pandas types rather than `ignore_missing_imports`. Under mypy strict an untyped
+# pandas would make every DataFrame expression `Any` and quietly void strict mode across
+# the whole data layer — which is the layer where a leakage bug would actually hide.
+pandas-stubs>=3.0,<4.0
 pip-audit>=2.7,<3.0
 pre-commit>=4.0,<5.0
 
