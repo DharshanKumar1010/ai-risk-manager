@@ -18,9 +18,9 @@ redis>=5.2,<7.0
 pyjwt>=2.10,<3.0
 
 # --- Data and ML layer -------------------------------------------------------
-# Added in Phase 1 for the feature pipeline. The per-tier model libraries
-# (lightgbm, xgboost, torch, networkx, shap, econml) arrive with their own phases —
-# adding them now would inflate the image for code that does not exist yet.
+# Added in Phase 1 for the feature pipeline. The remaining per-tier model libraries
+# (xgboost, torch, networkx, econml) arrive with their own phases — adding them now
+# would inflate the image for code that does not exist yet.
 #
 # pandas 3.x is the current major: copy-on-write is enforced and string columns are
 # PyArrow-backed by default, which matters directly here — train_transaction.csv is
@@ -29,6 +29,13 @@ numpy>=2.4,<3.0
 pandas>=3.0,<4.0
 pyarrow>=25.0,<27.0
 scikit-learn>=1.9,<2.0
+
+# Phase 2, Tier-1. LightGBM is the supervised half of the Tier-1 comparison; SHAP
+# supplies its local explanations, which Phase 5's meta-learner and Phase 8's dashboard
+# both read. SHAP is here rather than in Phase 5 because TreeExplainer over an
+# already-trained booster is a small addition and the audit trail wants it now.
+lightgbm>=4.5,<5.0
+shap>=0.46,<1.0
 
 # --- Development and CI ------------------------------------------------------
 # Installed in the dev image and in CI. Phase 10 splits these out of the

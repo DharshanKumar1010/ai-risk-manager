@@ -1,1 +1,629 @@
-[]
+[
+  {
+    "model_id": "tier1-anomaly-lightgbm-ieee-cis-20260822t185154z",
+    "layer": "tier1_anomaly",
+    "algorithm": "lightgbm",
+    "source_dataset": "ieee_cis",
+    "trained_at": "2026-08-22T18:57:08.013727+00:00",
+    "training_window": {
+      "start": "2017-12-02 00:00:00+00:00",
+      "end": "2018-03-31 19:26:36+00:00"
+    },
+    "feature_version": "fv_c1d8eb96f693",
+    "hyperparameters": {
+      "objective": "binary",
+      "metric": "average_precision",
+      "learning_rate": 0.05,
+      "num_leaves": 63,
+      "min_data_in_leaf": 100,
+      "feature_fraction": 0.8,
+      "bagging_fraction": 0.8,
+      "bagging_freq": 1,
+      "lambda_l2": 1.0,
+      "num_threads": 4,
+      "deterministic": true,
+      "force_row_wise": true,
+      "seed": 42,
+      "verbosity": -1,
+      "num_boost_round": 2000,
+      "early_stopping_rounds": 100,
+      "best_iteration": 1917
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "LightGBM (full inputs)",
+      "split": "test",
+      "rows": 88581,
+      "positives": 3083,
+      "base_rate": 0.034804,
+      "threshold": 0.004715553611386762,
+      "threshold_criterion": "minimising estimated cost on validation",
+      "pr_auc": 0.527572,
+      "pr_auc_no_skill_floor": 0.034804,
+      "lift_over_no_skill": 15.158,
+      "precision": 0.10551,
+      "recall": 0.877068,
+      "f1": 0.18836,
+      "confusion_matrix": {
+        "tn": 62574,
+        "fp": 22924,
+        "fn": 379,
+        "tp": 2704
+      },
+      "pr_auc_ci95": [
+        0.511655,
+        0.546153
+      ],
+      "false_positive_cost": {
+        "threshold": 0.004715553611386762,
+        "units": "IEEE-CIS amount units (consistent with USD)",
+        "review_cost_per_false_positive": 3.0,
+        "flat_chargeback_fee_per_false_negative": 15.0,
+        "false_positives": 22924,
+        "false_negatives": 379,
+        "false_positive_cost": 68772.0,
+        "false_negative_cost": 51880.57,
+        "total_cost": 120652.57,
+        "cost_per_1000_transactions": 1362.0593,
+        "flagged": 25628,
+        "flag_rate": 0.289317,
+        "assumptions": [
+          "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "latency": {
+        "calls": 100.0,
+        "p50_ms": 5.62039999931585,
+        "p95_ms": 6.3839550042757764,
+        "p99_ms": 6.856241001514725,
+        "mean_ms": 5.617819999170024,
+        "max_ms": 8.275999978650361
+      },
+      "capacity_constrained_operating_point": {
+        "model": "LightGBM (full inputs) @ capacity",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.813709698322036,
+        "threshold_criterion": "flagging at most 1.0% of validation traffic",
+        "pr_auc": 0.527572,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 15.158,
+        "precision": 0.873418,
+        "recall": 0.246189,
+        "f1": 0.384109,
+        "confusion_matrix": {
+          "tn": 85388,
+          "fp": 110,
+          "fn": 2324,
+          "tp": 759
+        },
+        "false_positive_cost": {
+          "threshold": 0.813709698322036,
+          "units": "IEEE-CIS amount units (consistent with USD)",
+          "review_cost_per_false_positive": 3.0,
+          "flat_chargeback_fee_per_false_negative": 15.0,
+          "false_positives": 110,
+          "false_negatives": 2324,
+          "false_positive_cost": 330.0,
+          "false_negative_cost": 435709.85,
+          "total_cost": 436039.85,
+          "cost_per_1000_transactions": 4922.4986,
+          "flagged": 869,
+          "flag_rate": 0.00981,
+          "assumptions": [
+            "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "The same model at a staffable operating point. Reported because the cost-minimising threshold above assumes unbounded review capacity."
+        ]
+      }
+    },
+    "baseline_comparison": [
+      {
+        "model": "amount-only ranking (reference)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.4580645809748012,
+        "threshold_criterion": "minimising estimated cost on validation",
+        "pr_auc": 0.037122,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 1.067,
+        "precision": 0.033804,
+        "recall": 0.502108,
+        "f1": 0.063343,
+        "confusion_matrix": {
+          "tn": 41252,
+          "fp": 44246,
+          "fn": 1535,
+          "tp": 1548
+        },
+        "pr_auc_ci95": [
+          0.035617,
+          0.039057
+        ],
+        "false_positive_cost": {
+          "threshold": 0.4580645809748012,
+          "units": "IEEE-CIS amount units (consistent with USD)",
+          "review_cost_per_false_positive": 3.0,
+          "flat_chargeback_fee_per_false_negative": 15.0,
+          "false_positives": 44246,
+          "false_negatives": 1535,
+          "false_positive_cost": 132738.0,
+          "false_negative_cost": 73900.75,
+          "total_cost": 206638.75,
+          "cost_per_1000_transactions": 2332.7661,
+          "flagged": 45794,
+          "flag_rate": 0.516973,
+          "assumptions": [
+            "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "Not a model. The score is `amount_log`, rank-scaled."
+        ]
+      },
+      {
+        "model": "IsolationForest (unsupervised)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.07853449143672493,
+        "threshold_criterion": "minimising estimated cost on validation",
+        "pr_auc": 0.088597,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 2.546,
+        "precision": 0.04349,
+        "recall": 0.85339,
+        "f1": 0.082763,
+        "confusion_matrix": {
+          "tn": 27633,
+          "fp": 57865,
+          "fn": 452,
+          "tp": 2631
+        },
+        "pr_auc_ci95": [
+          0.084746,
+          0.092992
+        ],
+        "false_positive_cost": {
+          "threshold": 0.07853449143672493,
+          "units": "IEEE-CIS amount units (consistent with USD)",
+          "review_cost_per_false_positive": 3.0,
+          "flat_chargeback_fee_per_false_negative": 15.0,
+          "false_positives": 57865,
+          "false_negatives": 452,
+          "false_positive_cost": 173595.0,
+          "false_negative_cost": 63174.91,
+          "total_cost": 236769.91,
+          "cost_per_1000_transactions": 2672.9198,
+          "flagged": 60496,
+          "flag_rate": 0.682946,
+          "assumptions": [
+            "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "Sees no labels. Kept as the cold-start reference: chargeback labels arrive weeks after the transaction, so this is what is achievable on a merchant with no labelled history yet."
+        ]
+      },
+      {
+        "model": "LightGBM (matched inputs)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.009494807789617497,
+        "threshold_criterion": "minimising estimated cost on validation",
+        "pr_auc": 0.511882,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 14.707,
+        "precision": 0.104931,
+        "recall": 0.878041,
+        "f1": 0.187459,
+        "confusion_matrix": {
+          "tn": 62407,
+          "fp": 23091,
+          "fn": 376,
+          "tp": 2707
+        },
+        "pr_auc_ci95": [
+          0.495536,
+          0.53027
+        ],
+        "false_positive_cost": {
+          "threshold": 0.009494807789617497,
+          "units": "IEEE-CIS amount units (consistent with USD)",
+          "review_cost_per_false_positive": 3.0,
+          "flat_chargeback_fee_per_false_negative": 15.0,
+          "false_positives": 23091,
+          "false_negatives": 376,
+          "false_positive_cost": 69273.0,
+          "false_negative_cost": 56363.19,
+          "total_cost": 125636.19,
+          "cost_per_1000_transactions": 1418.3198,
+          "flagged": 25798,
+          "flag_rate": 0.291236,
+          "assumptions": [
+            "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "Fitted on the same numeric-only matrix as the Isolation Forest, so the gap between the two is supervision alone rather than a difference in inputs."
+        ]
+      }
+    ],
+    "artifact": "artifacts\\tier1-anomaly-lightgbm-ieee-cis-20260822t185154z.txt",
+    "notes": [
+      "Selected on VALIDATION PR-AUC (0.6155) from 4 candidates; test was scored once afterwards, for reporting only.",
+      "PR-AUC advantage over the unsupervised Isolation Forest baseline: 95% CI [0.4241, 0.4558].",
+      "Advantage over the runner-up (LightGBM (matched inputs)): 95% CI [0.0105, 0.0211].",
+      "Top features by split gain: C1 7.2%, C14 4.6%, C13 4.3%, card1 4.3%, card2 4.2%",
+      "Tier-1 mints its own feature_version: it reads the raw row columns the Phase 1 pipeline kept out of transactions.features, so its input set is genuinely a different definition from the pipeline's."
+    ]
+  },
+  {
+    "model_id": "tier1-anomaly-lightgbm-matched-paysim-20260822t185154z",
+    "layer": "tier1_anomaly",
+    "algorithm": "lightgbm",
+    "source_dataset": "paysim",
+    "trained_at": "2026-08-22T19:17:15.545660+00:00",
+    "training_window": {
+      "start": "2017-01-01 00:00:00+00:00",
+      "end": "2017-01-14 09:00:00+00:00"
+    },
+    "feature_version": "fv_7bb1251837e5",
+    "hyperparameters": {
+      "objective": "binary",
+      "metric": "average_precision",
+      "learning_rate": 0.05,
+      "num_leaves": 63,
+      "min_data_in_leaf": 100,
+      "feature_fraction": 0.8,
+      "bagging_fraction": 0.8,
+      "bagging_freq": 1,
+      "lambda_l2": 1.0,
+      "num_threads": 4,
+      "deterministic": true,
+      "force_row_wise": true,
+      "seed": 42,
+      "verbosity": -1,
+      "num_boost_round": 2000,
+      "early_stopping_rounds": 100,
+      "best_iteration": 43
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "LightGBM (matched inputs)",
+      "split": "test",
+      "rows": 416297,
+      "positives": 4020,
+      "base_rate": 0.009657,
+      "threshold": 0.3560252624560895,
+      "threshold_criterion": "minimising estimated cost on validation",
+      "pr_auc": 0.999794,
+      "pr_auc_no_skill_floor": 0.009657,
+      "lift_over_no_skill": 103.535,
+      "precision": 0.970496,
+      "recall": 0.998259,
+      "f1": 0.984181,
+      "confusion_matrix": {
+        "tn": 412155,
+        "fp": 122,
+        "fn": 7,
+        "tp": 4013
+      },
+      "pr_auc_ci95": [
+        0.999693,
+        0.999876
+      ],
+      "false_positive_cost": {
+        "threshold": 0.3560252624560895,
+        "units": "PaySim simulator units (not currency)",
+        "review_cost_per_false_positive": 7454.7339,
+        "flat_chargeback_fee_per_false_negative": 37273.6695,
+        "false_positives": 122,
+        "false_negatives": 7,
+        "false_positive_cost": 909477.53,
+        "false_negative_cost": 3877897.51,
+        "total_cost": 4787375.04,
+        "cost_per_1000_transactions": 11499.9028,
+        "flagged": 4135,
+        "flag_rate": 0.009933,
+        "assumptions": [
+          "A false positive costs 7,454.73 PaySim simulator units (not currency) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 37,273.67 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "notes": [
+        "Fitted on the same numeric-only matrix as the Isolation Forest, so the gap between the two is supervision alone rather than a difference in inputs."
+      ],
+      "latency": {
+        "calls": 100.0,
+        "p50_ms": 0.16994999896269292,
+        "p95_ms": 0.28543998923851177,
+        "p99_ms": 0.32886597968172426,
+        "mean_ms": 0.18322199903195724,
+        "max_ms": 0.6126000080257654
+      },
+      "capacity_constrained_operating_point": {
+        "model": "LightGBM (matched inputs) @ capacity",
+        "split": "test",
+        "rows": 416297,
+        "positives": 4020,
+        "base_rate": 0.009657,
+        "threshold": 0.000263232696546432,
+        "threshold_criterion": "flagging at most 1.0% of validation traffic",
+        "pr_auc": 0.999794,
+        "pr_auc_no_skill_floor": 0.009657,
+        "lift_over_no_skill": 103.535,
+        "precision": 0.272949,
+        "recall": 1.0,
+        "f1": 0.428846,
+        "confusion_matrix": {
+          "tn": 401569,
+          "fp": 10708,
+          "fn": 0,
+          "tp": 4020
+        },
+        "false_positive_cost": {
+          "threshold": 0.000263232696546432,
+          "units": "PaySim simulator units (not currency)",
+          "review_cost_per_false_positive": 7454.7339,
+          "flat_chargeback_fee_per_false_negative": 37273.6695,
+          "false_positives": 10708,
+          "false_negatives": 0,
+          "false_positive_cost": 79825290.51,
+          "false_negative_cost": 0.0,
+          "total_cost": 79825290.51,
+          "cost_per_1000_transactions": 191750.8186,
+          "flagged": 14728,
+          "flag_rate": 0.035379,
+          "assumptions": [
+            "A false positive costs 7,454.73 PaySim simulator units (not currency) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 37,273.67 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "The same model at a staffable operating point. Reported because the cost-minimising threshold above assumes unbounded review capacity."
+        ]
+      }
+    },
+    "baseline_comparison": [
+      {
+        "model": "amount-only ranking (reference)",
+        "split": "test",
+        "rows": 416297,
+        "positives": 4020,
+        "base_rate": 0.009657,
+        "threshold": 0.8190661432340659,
+        "threshold_criterion": "minimising estimated cost on validation",
+        "pr_auc": 0.12128,
+        "pr_auc_no_skill_floor": 0.009657,
+        "lift_over_no_skill": 12.559,
+        "precision": 0.058285,
+        "recall": 0.396269,
+        "f1": 0.101624,
+        "confusion_matrix": {
+          "tn": 386539,
+          "fp": 25738,
+          "fn": 2427,
+          "tp": 1593
+        },
+        "pr_auc_ci95": [
+          0.11114,
+          0.132303
+        ],
+        "false_positive_cost": {
+          "threshold": 0.8190661432340659,
+          "units": "PaySim simulator units (not currency)",
+          "review_cost_per_false_positive": 7454.7339,
+          "flat_chargeback_fee_per_false_negative": 37273.6695,
+          "false_positives": 25738,
+          "false_negatives": 2427,
+          "false_positive_cost": 191869940.91,
+          "false_negative_cost": 675399480.64,
+          "total_cost": 867269421.54,
+          "cost_per_1000_transactions": 2083294.9109,
+          "flagged": 27331,
+          "flag_rate": 0.065653,
+          "assumptions": [
+            "A false positive costs 7,454.73 PaySim simulator units (not currency) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 37,273.67 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "Not a model. The score is `amount_log`, rank-scaled."
+        ]
+      },
+      {
+        "model": "IsolationForest (unsupervised)",
+        "split": "test",
+        "rows": 416297,
+        "positives": 4020,
+        "base_rate": 0.009657,
+        "threshold": 0.48133148534305803,
+        "threshold_criterion": "minimising estimated cost on validation",
+        "pr_auc": 0.079362,
+        "pr_auc_no_skill_floor": 0.009657,
+        "lift_over_no_skill": 8.218,
+        "precision": 0.073511,
+        "recall": 0.400249,
+        "f1": 0.124209,
+        "confusion_matrix": {
+          "tn": 391998,
+          "fp": 20279,
+          "fn": 2411,
+          "tp": 1609
+        },
+        "pr_auc_ci95": [
+          0.074254,
+          0.086244
+        ],
+        "false_positive_cost": {
+          "threshold": 0.48133148534305803,
+          "units": "PaySim simulator units (not currency)",
+          "review_cost_per_false_positive": 7454.7339,
+          "flat_chargeback_fee_per_false_negative": 37273.6695,
+          "false_positives": 20279,
+          "false_negatives": 2411,
+          "false_positive_cost": 151174548.59,
+          "false_negative_cost": 1103646689.7,
+          "total_cost": 1254821238.3,
+          "cost_per_1000_transactions": 3014245.2103,
+          "flagged": 21888,
+          "flag_rate": 0.052578,
+          "assumptions": [
+            "A false positive costs 7,454.73 PaySim simulator units (not currency) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 37,273.67 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "Sees no labels. Kept as the cold-start reference: chargeback labels arrive weeks after the transaction, so this is what is achievable on a merchant with no labelled history yet."
+        ]
+      },
+      {
+        "model": "LightGBM (full inputs)",
+        "split": "test",
+        "rows": 416297,
+        "positives": 4020,
+        "base_rate": 0.009657,
+        "threshold": 0.40312161070670766,
+        "threshold_criterion": "minimising estimated cost on validation",
+        "pr_auc": 0.999915,
+        "pr_auc_no_skill_floor": 0.009657,
+        "lift_over_no_skill": 103.548,
+        "precision": 0.99975,
+        "recall": 0.993781,
+        "f1": 0.996756,
+        "confusion_matrix": {
+          "tn": 412276,
+          "fp": 1,
+          "fn": 25,
+          "tp": 3995
+        },
+        "pr_auc_ci95": [
+          0.999848,
+          0.99996
+        ],
+        "false_positive_cost": {
+          "threshold": 0.40312161070670766,
+          "units": "PaySim simulator units (not currency)",
+          "review_cost_per_false_positive": 7454.7339,
+          "flat_chargeback_fee_per_false_negative": 37273.6695,
+          "false_positives": 1,
+          "false_negatives": 25,
+          "false_positive_cost": 7454.73,
+          "false_negative_cost": 24721831.56,
+          "total_cost": 24729286.29,
+          "cost_per_1000_transactions": 59402.9894,
+          "flagged": 3996,
+          "flag_rate": 0.009599,
+          "assumptions": [
+            "A false positive costs 7,454.73 PaySim simulator units (not currency) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 37,273.67 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        }
+      },
+      {
+        "model": "LightGBM (ingestion-safe)",
+        "split": "test",
+        "rows": 416297,
+        "positives": 4020,
+        "base_rate": 0.009657,
+        "threshold": 0.015465829410617719,
+        "threshold_criterion": "minimising estimated cost on validation",
+        "pr_auc": 0.938595,
+        "pr_auc_no_skill_floor": 0.009657,
+        "lift_over_no_skill": 97.198,
+        "precision": 0.69519,
+        "recall": 0.927612,
+        "f1": 0.794757,
+        "confusion_matrix": {
+          "tn": 410642,
+          "fp": 1635,
+          "fn": 291,
+          "tp": 3729
+        },
+        "pr_auc_ci95": [
+          0.933416,
+          0.943517
+        ],
+        "false_positive_cost": {
+          "threshold": 0.015465829410617719,
+          "units": "PaySim simulator units (not currency)",
+          "review_cost_per_false_positive": 7454.7339,
+          "flat_chargeback_fee_per_false_negative": 37273.6695,
+          "false_positives": 1635,
+          "false_negatives": 291,
+          "false_positive_cost": 12188489.91,
+          "false_negative_cost": 46847218.42,
+          "total_cost": 59035708.34,
+          "cost_per_1000_transactions": 141811.5152,
+          "flagged": 5364,
+          "flag_rate": 0.012885,
+          "assumptions": [
+            "A false positive costs 7,454.73 PaySim simulator units (not currency) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 37,273.67 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        },
+        "notes": [
+          "Post-settlement balance features removed: `newbalanceOrig`, `newbalanceDest`, `balance_error_orig`, `balance_error_dest`, `drains_origin_balance`. A real ingestion-time scorer does not have the balance a transaction settles to. The gap against the full model is the measured size of that advantage, and this is the deployable number."
+        ]
+      }
+    ],
+    "artifact": "artifacts\\tier1-anomaly-lightgbm-matched-paysim-20260822t185154z.txt",
+    "notes": [
+      "DO NOT QUOTE AS A HEADLINE. Test PR-AUC 0.9998 exceeds 0.95 on fraud data, which ml-evaluation-standards section 4 treats as a leak signal until disproven. See app/models/README.md and BUILD_LOG.md for the investigation and the diagnosis before using this number for anything.",
+      "Selected on VALIDATION PR-AUC (1.0000) from 5 candidates; test was scored once afterwards, for reporting only.",
+      "PR-AUC advantage over the unsupervised Isolation Forest baseline: 95% CI [0.9136, 0.9255].",
+      "Advantage over the runner-up (LightGBM (full inputs)): 95% CI [-0.0002, -0.0000] \u2014 includes zero, so this selection is inside sampling noise and the runner-up is an equally defensible choice.",
+      "Top features by split gain: freq_transaction_type 40.1%, hour_of_day 21.7%, oldbalanceDest 17.0%, newbalanceDest 11.4%, amount_log 2.8%",
+      "Tier-1 mints its own feature_version: it reads the raw row columns the Phase 1 pipeline kept out of transactions.features, so its input set is genuinely a different definition from the pipeline's.",
+      "Fitted on the same numeric-only matrix as the Isolation Forest, so the gap between the two is supervision alone rather than a difference in inputs."
+    ]
+  }
+]

@@ -356,3 +356,180 @@ tools on source files, not shell text round-trips.
   reachable from an endpoint.
 - **`velocity_*` and the familiarity features are unvalidated against fraud.** They are
   leakage-safe and correctly computed; whether they carry signal is Phase 2's measurement.
+
+---
+
+## Phase 2 — Tier-1 real-time anomaly layer
+
+**Verified end state.** `python -m app.models.train_tier1` trains and compares four candidates
+per corpus (five for PaySim), scoring the held-out test split exactly once. IEEE-CIS selected
+model: **LightGBM, test PR-AUC 0.5276** (95% CI 0.5117–0.5462) against a no-skill floor of
+0.0348 — a 15.2x lift, selected on validation and scored once on test. Latency p50 5.62ms /
+p95 6.38ms / p99 6.86ms against a 50ms budget. `ruff`, `black`, `mypy --strict` and the full
+suite green. Four consecutive full runs produced identical PR-AUC to four decimal places,
+which is the reproducibility claim `models/registry.json` makes on every entry (latency is
+wall-clock and moves ~1ms between runs).
+
+### Four measured findings that change later phases
+
+**1. Supervision is worth ~0.42 PR-AUC; richer inputs are worth ~0.016.** The comparison was
+built to separate the two, because "the supervised model won" would otherwise confound
+supervision with LightGBM's ability to take native categoricals that Isolation Forest cannot.
+Fitting LightGBM on the *identical* numeric-only matrix the forest saw gives 0.5119 against the
+forest's 0.0886 (paired delta 95% CI [0.4241, 0.4558]); adding native categoricals moves it to
+0.5276 (paired delta [0.0105, 0.0211]). Both are real, and they are two orders of magnitude
+apart. **If a later tier is expensive to build, this is the evidence that labels buy far more
+than features do.**
+
+**2. Tier-1 catches 24.6% of fraud by count but only 14.6% by value.** Recall falls as the
+amount rises — 0.3945 on the cheapest quartile of fraud, 0.1729 on the most expensive. Median
+amount of caught fraud 43.65, of missed fraud 75.00. The cost model chooses the *threshold* but
+the model's *ranking* is fitted on the label and is value-blind. **This is the concrete opening
+for Phase 6's causal cost layer**: cost-sensitive training, not just cost-sensitive
+thresholding. It is also the number that must accompany any recall figure quoted for this
+layer, because the recall figure alone overstates what is recovered by roughly 10 points.
+
+**3. PaySim's Tier-1 result is an artefact of the simulator and must not be quoted.** PR-AUC
+0.9999 tripped the automated `> 0.95` leak warning. Investigated rather than reported:
+`amount == oldbalanceOrg` (exact, ±0.01) holds for **97.49% of fraud and 0 of 412,277
+legitimate test rows** — precision 1.0000 as a lone rule, and `-|amount − oldbalanceOrg|` alone
+scores 0.9751 average precision. PaySim's fraud agent transfers exactly the full balance. This
+is not a leak in our pipeline — no future information is read and the split boundaries hold —
+it is a property of the corpus. **Phase 5 must not fit the meta-learner on PaySim**, or it
+learns "Tier-1 is always right", which transfers nowhere. PaySim's value to this project
+remains its graph structure for Tier-3.
+
+**4. Phase 1's open question is answered: the account-history features carry signal.**
+`velocity_sum_7d` (2.4%) and `amount_prior_mean` (2.3%) both land in the selected model's top
+twelve by split gain, alongside the `C`/`D` blocks. The Phase 1 log left this explicitly
+unresolved; it is now measured. Separately, `velocity_available` was dropped automatically as
+constant-on-train, and eleven PaySim columns were dropped the same way — reproducing by
+measurement exactly the dead columns the Phase 1 EDA had identified by hand.
+
+### Obstacles hit and how they were solved
+
+**The obvious scoring implementation missed the latency budget by 40%.** Assembling a one-row
+`DataFrame` and handing it to LightGBM cost 21.6ms per call — ~17.9ms constructing 28
+`pd.Categorical` columns and ~9.2ms while LightGBM re-derived the pandas category mapping.
+Neither is model work; both are pandas overhead. Serving now converts categoricals to integer
+codes and scores a plain float array, which is the representation LightGBM built internally at
+training time anyway. Verified identical to the batch path (max absolute difference 0.0) and
+pinned by `test_numpy_and_pandas_paths_agree`, because the equivalence holds only while the
+code ordering matches the categorical ordering seen at training. Result: 21.6ms → 0.05ms for
+the predict step, 4.83ms p50 end to end on the full 1,067-tree model.
+
+**The phase brief, followed literally, produces a contaminated model selection.** It says
+"evaluate both on the held-out test split … pick whichever wins on PR-AUC", and the first
+implementation did exactly that: `max(candidates, key=lambda c: c.result.pr_auc)` where
+`result` is the *test* result. Every other decision was correctly made on validation — early
+stopping, the operating threshold, the capacity ceiling, both sensitivity sweeps — and this one
+was not. It means the shipped model was chosen using the same split its headline is quoted
+from, which ml-evaluation-standards section 1 says invalidates the headline.
+
+Found by running the `ml-evaluator` agent's own checklist by hand (item 2, test-set
+contamination) rather than by anything failing. **It was not a technicality:** on a 20k sampled
+run, selecting honestly on validation picks LightGBM *matched inputs* where selecting on test
+picked *full inputs*, and the paired delta between them straddles zero. The two procedures
+genuinely disagree.
+
+Fixed by applying the brief's own criterion one split earlier — candidates are ranked on
+validation PR-AUC, test is scored once afterwards and only to report. Guarded by
+`test_model_selection_reads_validation_not_test`, and the report now shows the `val PR-AUC`
+column the selection actually reads next to the test column it does not.
+
+**Overlapping confidence intervals are not a tie, and nearly got reported as one.** The
+selected model's PR-AUC interval (0.5117–0.5462) overlaps the runner-up's (0.4955–0.5303),
+which reads as "no significant difference". It is not: both models score the *same* test split,
+so their errors are correlated. Bootstrapping the difference **paired** — both models scored on
+each resample — removes the split's shared variance and gives [0.0105, 0.0211], which excludes
+zero. The first draft of the model README claimed the advantage was inside sampling noise. It
+was wrong, and the paired test is what caught it.
+
+**Two "what this does NOT catch" claims were written from reasoning and both were false.** The
+first draft asserted that low-value fraud is systematically under-caught — the cost model
+prices false negatives by amount, so the reasoning seemed sound. Measured, it is exactly
+backwards: recall is *highest* on the cheapest quartile. The second asserted a large penalty on
+no-history accounts; measured, it is 0.2252 against 0.2509, real but minor, because the `C`/`D`
+blocks carry per-entity history of their own. The evaluation standard says write that section
+from observed false negatives rather than imagination. Both drafts are why.
+
+**scikit-learn 1.9's `IsolationForest` accepts NaN, which removed a planned component.** The
+plan called for a train-fitted median imputer plus missingness indicators, on the assumption
+that the forest would reject missing values. Checked before building: it does not. Dropping the
+imputer left both models consuming the *same* NaN-preserving matrix, which makes the matched
+comparison cleaner than it would otherwise have been, and removed a fitted artefact that would
+have needed versioning and keeping in step with the model. Verifying the assumption was worth
+more than implementing it.
+
+**A sklearn warning would have failed the suite from an unexpected direction.** Fitting the
+forest on a named `DataFrame` and later scoring a bare array emits a "does not have valid
+feature names" warning, and `filterwarnings = ["error"]` turns that into a test failure. Fitted
+on the array instead, so fitting and scoring agree on the representation from the start.
+
+**The ±50% cost sensitivity sweep the standard asks for is the uninformative direction.**
+Scaling both cost parameters together changes the magnitude of the cost but not the FP:FN
+ratio, so the recommended threshold barely moves (flag rate 47.1% → 22.7%). Varying the review
+cost alone moves it enormously (26.4% → 3.1% across a 25x range). Both are now reported; the
+second is the one that tells a reader how much the recommendation rests on a guessed constant.
+
+**The cost-optimal threshold implied an unstaffable review queue.** With a false negative
+priced at the transaction amount (~69 median) against a review at 3, the arithmetic favours
+reviewing 28.9% of all traffic. That is correct and useless. The report now also carries a
+capacity-constrained operating point — the same model capped at 1% of traffic — which is where
+the deployable number lives: **precision 0.8734 at a 0.98% flag rate**.
+
+### Design decisions worth stating
+
+- **Tier-1 mints its own `feature_version`.** It reads the raw row columns Phase 1 deliberately
+  kept out of `transactions.features` — chiefly `C1`-`C14` and `D1`-`D15`, Vesta's own
+  per-entity aggregates, which turn out to be the top signal (`C1` alone is 7.2% of split
+  gain). Its input set is genuinely a different definition, so reusing the pipeline's hash
+  would be a false claim about what produced a prediction.
+- **"No Tier-2/3 dependency" is not "no account history."** `velocity_*` and the familiarity
+  features are Phase 1 feature-store outputs, not another tier's model outputs, so Tier-1 stays
+  independently scoreable while using them. `score()` consumes an already-assembled vector, so
+  the 50ms budget covers inference only.
+- **A missing feature raises rather than zero-filling.** A zero-filled vector produces a wrong
+  decision underneath a correct-looking audit row, which is the one failure an audit trail
+  exists to prevent.
+- **LightGBM is persisted in its native text format, not pickled.** Loading a pickle executes
+  arbitrary code and this path becomes reachable from a Phase 7 endpoint. Only the Isolation
+  Forest, which has no text format, goes through joblib.
+- **Isolation Forest is kept despite losing 6x.** Chargeback labels arrive weeks late, so the
+  unsupervised floor is the real answer for a merchant with no labelled history yet.
+- **Degenerate columns are found by measurement, not by a hardcoded list.** Null-rate and
+  variance are checked on train; that reproduced all eleven of PaySim's dead columns without
+  anyone naming them, and will keep working when the data changes.
+
+### Known gaps leaving Phase 2
+
+- **RLS is still not effective** — carried forward from Phase 1. Unchanged: the app connects as
+  the `riskiq` superuser. Phase 7 must grant `LOGIN` to `riskiq_app` and repoint `DATABASE_URL`.
+- **Feature-assembly latency is unmeasured.** The 50ms budget is verified for the scoring call.
+  The account-state range scan that Phase 7 must run to build the vector has not been timed
+  against `ix_transactions_account_time`, and it is the part most likely to be slow.
+- **Two constraints Phase 7 must honour, from the Phase 2 security review.** First, the
+  scoring endpoint must accept *raw transaction fields* and assemble the feature vector
+  server-side — `FeatureVector` is unbounded, so an endpoint taking a client-supplied vector
+  would let a caller choose its own score while leaving a correct-looking audit row. Second,
+  `explain()` and `top_feature_importances()` are an evasion oracle under checklist section
+  8.3: valuable for the Phase 8 reviewer dashboard, but they must be authenticated and never
+  returned to the transacting party.
+- **A validation-derived capacity ceiling does not transfer under base-rate shift.** The 1%
+  flag-rate cap lands at 0.98% on IEEE-CIS, whose base rate is near-stationary, but at 2.25%
+  on PaySim, whose test window runs 7x its validation base rate. Phase 7 should size a review
+  queue from a threshold re-derived on recent traffic, not from a fixed historical one.
+- **The V1–V339 block is still unreduced**, and remains deferred. Phase 1 earmarked the
+  NaN-pattern correlation reduction for Phase 2; the 113-feature model without it clears the
+  bar, so it stays available as a lever if Phase 5 needs more from Tier-1.
+- **Online recalibration is designed for, not implemented.** `OnlineRecalibrator` is an
+  interface stub. It needs the labelled feedback path that does not exist until Phase 9.
+- **No hyperparameter search was run.** The LightGBM parameters are sensible defaults with
+  early stopping on validation average precision. A search would likely add a little, and was
+  not the best use of the remaining time.
+- **The PaySim Tier-1 model is registered but should not be deployed.** It is kept for
+  completeness and for the ingestion-safe ablation. Its registry entry now opens with an
+  automatic `DO NOT QUOTE AS A HEADLINE` caveat — added after noticing that the first run
+  recorded a PR-AUC of 0.9999 with no warning attached, so anyone reading `registry.json`
+  alone would have taken it at face value. Any leak-suspicious result from any tier now
+  carries that caveat into the permanent record rather than only into a log line.

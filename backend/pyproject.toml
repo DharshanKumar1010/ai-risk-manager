@@ -49,12 +49,16 @@ pretty = true
 module = ["asyncpg.*", "redis.*"]
 ignore_missing_imports = true
 
-# scikit-learn ships no py.typed marker and has no stub package. Deliberately scoped to
-# sklearn alone: pandas is typed via pandas-stubs, so the data layer stays strictly
-# checked. If a call site is genuinely unworkable, use a targeted `# type: ignore[code]`
-# with a reason rather than widening this list.
+# These ML libraries ship no py.typed marker and have no stub package. Deliberately scoped
+# to them alone: pandas is typed via pandas-stubs, so the data layer stays strictly checked.
+# If a call site is genuinely unworkable, use a targeted `# type: ignore[code]` with a
+# reason rather than widening this list.
+#
+# Untyped here means every expression touching one of these is `Any`, so the boundary is
+# kept narrow: model objects are held behind our own annotated wrappers (Tier1Model,
+# CostModel, EvaluationResult) rather than passed around raw.
 [[tool.mypy.overrides]]
-module = ["sklearn.*", "pyarrow.*"]
+module = ["sklearn.*", "pyarrow.*", "joblib.*", "lightgbm.*", "shap.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]
