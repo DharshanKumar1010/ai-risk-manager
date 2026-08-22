@@ -1,0 +1,71 @@
+# RiskIQ pre-commit hooks. Every hook here blocks the commit on failure.
+#
+# Install once per clone:  pre-commit install
+# Run against everything:  pre-commit run --all-files
+
+fail_fast: false
+default_stages: [pre-commit]
+
+repos:
+  # --- Secret scanning -------------------------------------------------------
+  # Runs from the official container image so it needs no local Go toolchain —
+  # Docker is already a hard requirement for this project's stack.
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: trufflehog — secret scan (blocking)
+        entry: >-
+          trufflesecurity/trufflehog:latest
+          filesystem /src
+          --no-update
+          --fail
+          --exclude-paths=/src/.trufflehog-exclude
+        language: docker_image
+        pass_filenames: false
+
+  # --- Python lint and format ------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff
+        name: ruff — lint (E,F,I,N,W,B)
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^backend/
+      - id: ruff-format
+        name: ruff — format check
+        files: ^backend/
+
+  - repo: https://github.com/psf/black
+    rev: 26.5.1
+    hooks:
+      - id: black
+        name: black — format (line-length 100)
+        args: [--line-length=100]
+        files: ^backend/
+
+  # --- Notebook hygiene ------------------------------------------------------
+  # Notebooks are versioned; their outputs are not. Stripping here is what makes
+  # "outputs gitignored" actually true for files that are tracked.
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        name: nbstripout — strip notebook outputs
+        files: ^notebooks/.*\.ipynb$
+
+  # --- General hygiene -------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+        # tsconfig files are JSONC — comments are valid there and this hook is a
+        # strict JSON parser. Their validity is enforced by `tsc -b` in npm run lint.
+        exclude: ^frontend/tsconfig(\..+)?\.json$
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key

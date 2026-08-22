@@ -1,0 +1,77 @@
+# RiskIQ local development stack.
+#
+# Credentials here are local-development values supplied through the environment with
+# development-only fallbacks. Deployed environments never read this file.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: riskiq-postgres
+    environment:
+      POSTGRES_USER: riskiq
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riskiq_local_dev}
+      POSTGRES_DB: riskiq
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U riskiq -d riskiq"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: riskiq-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ./backend
+    container_name: riskiq-backend
+    environment:
+      ENVIRONMENT: local
+      DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://riskiq:${POSTGRES_PASSWORD:-riskiq_local_dev}@postgres:5432/riskiq
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-placeholder-change-me-before-deploy}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/srv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: riskiq-frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      # Keep the image's node_modules — the host tree is Windows-built and would
+      # shadow it with incompatible native binaries.
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:

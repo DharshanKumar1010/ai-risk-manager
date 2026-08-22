@@ -1,0 +1,22 @@
+# Normalise line endings to LF everywhere.
+#
+# This repo is developed on Windows and runs in Linux containers. Without this, git's
+# autocrlf turns checked-out files into CRLF, and a CRLF shell script or entrypoint
+# fails inside a container with an opaque "not found" error.
+* text=auto eol=lf
+
+# Binary assets — never touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.pkl binary
+*.pt binary
+*.pth binary
+*.joblib binary
+*.onnx binary
+
+# Notebooks are JSON; keep them LF and let nbstripout own the diff noise.
+*.ipynb text eol=lf

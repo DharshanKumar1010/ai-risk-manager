@@ -1,0 +1,65 @@
+# --- Secrets -----------------------------------------------------------------
+# A committed secret is leaked even after it is deleted — it must be rotated.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Node --------------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Data --------------------------------------------------------------------
+# Datasets are never committed. The directory structure is, so a cold clone knows
+# where to put the IEEE-CIS and PaySim downloads.
+data/*
+!data/.gitkeep
+!data/README.md
+!data/raw/
+data/raw/*
+!data/raw/.gitkeep
+!data/processed/
+data/processed/*
+!data/processed/.gitkeep
+
+# --- Model artefacts ---------------------------------------------------------
+# Weights are build outputs. models/registry.json is the versioned record and IS tracked.
+*.pkl
+*.pt
+*.pth
+*.joblib
+*.onnx
+*.bin
+models/artifacts/
+
+# --- Notebooks ---------------------------------------------------------------
+# Notebooks themselves are versioned; their outputs are stripped by the nbstripout
+# pre-commit hook before the commit lands.
+.ipynb_checkpoints/
+
+# --- OS / editor -------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

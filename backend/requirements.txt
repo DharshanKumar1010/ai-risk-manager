@@ -1,0 +1,41 @@
+# RiskIQ backend dependencies.
+#
+# Bounded ranges rather than exact pins for Phase 0, so the scaffold builds reliably on a
+# cold clone. Phase 10 pins exact versions and generates a lockfile before deployment.
+
+# --- Runtime -----------------------------------------------------------------
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+pydantic>=2.9,<3.0
+pydantic-settings>=2.6,<3.0
+
+sqlalchemy[asyncio]>=2.0.36,<2.1
+asyncpg>=0.30,<0.31
+alembic>=1.14,<2.0
+greenlet>=3.1,<4.0
+
+redis>=5.2,<7.0
+pyjwt>=2.10,<3.0
+
+# --- Development and CI ------------------------------------------------------
+# Installed in the dev image and in CI. Phase 10 splits these out of the
+# production image to shrink the deployed artefact.
+# Floors below are set by pip-audit advisories, not preference — see BUILD_LOG Phase 0.
+# PYSEC-2026-1845 (pytest) is fixed in 9.0.3.
+pytest>=9.0.3,<10.0
+pytest-asyncio>=0.24,<2.0
+pytest-cov>=6.0,<8.0
+# starlette's TestClient requires httpx2; using httpx emits a deprecation warning that
+# our filterwarnings=error pytest config (correctly) turns into a failure.
+httpx2>=2.12,<3.0
+
+ruff>=0.8,<1.0
+# PYSEC-2026-2120 / PYSEC-2026-2121 (black) are fixed in 26.3.1.
+black>=26.3.1,<27.0
+mypy>=1.13,<2.0
+pip-audit>=2.7,<3.0
+pre-commit>=4.0,<5.0
+
+# Not a direct dependency — it ships in the python:3.11-slim base image at a version
+# carrying PYSEC-2026-3447. Pinned forward so `pip-audit` on the built image is clean.
+setuptools>=83.0.0

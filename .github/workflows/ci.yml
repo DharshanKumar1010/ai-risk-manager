@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: lint, types, tests, audits
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # --- Order below is fixed by the Phase 0 spec -------------------------
+      - name: ruff check
+        working-directory: backend
+        run: ruff check .
+
+      - name: mypy
+        working-directory: backend
+        run: mypy app/
+
+      - name: pytest
+        working-directory: backend
+        run: pytest -x
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm run lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: npm test
+        working-directory: frontend
+        run: npm test
+
+      # Audits the installed environment rather than requirements.txt, so that
+      # transitive and base-image packages (e.g. setuptools) are covered too.
+      - name: pip-audit
+        working-directory: backend
+        run: pip-audit --progress-spinner off
+
+      - name: npm audit
+        working-directory: frontend
+        run: npm audit --audit-level=high

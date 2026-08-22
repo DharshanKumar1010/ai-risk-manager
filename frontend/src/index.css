@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+
+/* Phase 8 replaces this with the risk-ops console's design tokens. Until then the
+   only base rules here are ones no later design decision would want to undo. */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
