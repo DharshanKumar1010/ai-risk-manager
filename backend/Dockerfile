@@ -13,7 +13,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# The PyTorch CPU index is added alongside PyPI rather than replacing it. On Linux the
+# default PyPI torch wheel bundles the CUDA runtime — roughly 2GB the image never uses,
+# because Tier-2 trains and scores on CPU for determinism (see requirements.txt).
+RUN pip install --upgrade pip \
+    && pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 COPY . .
 

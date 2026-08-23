@@ -19,7 +19,7 @@ pyjwt>=2.10,<3.0
 
 # --- Data and ML layer -------------------------------------------------------
 # Added in Phase 1 for the feature pipeline. The remaining per-tier model libraries
-# (xgboost, torch, networkx, econml) arrive with their own phases — adding them now
+# (xgboost, networkx, econml) arrive with their own phases — adding them now
 # would inflate the image for code that does not exist yet.
 #
 # pandas 3.x is the current major: copy-on-write is enforced and string columns are
@@ -36,6 +36,17 @@ scikit-learn>=1.9,<2.0
 # already-trained booster is a small addition and the audit trail wants it now.
 lightgbm>=4.5,<5.0
 shap>=0.46,<1.0
+
+# Phase 3, Tier-2. The CPU build only: Tier-2's encoder is an LSTM, and cuDNN's LSTM
+# kernel is non-deterministic, which would falsify the reproducibility claim
+# models/registry.json makes about every model in it. The CPU wheel is what PyPI serves
+# by default on Windows and macOS; on Linux the Dockerfile takes it from the explicit
+# cpu index, so the image does not carry ~2GB of unused CUDA libraries.
+torch>=2.5,<3.0
+
+# Phase 3 requires the reconstruction-error distribution and the training loss curve as
+# plots, and they gate the phase. Agg backend only — nothing here opens a window.
+matplotlib>=3.9,<4.0
 
 # --- Development and CI ------------------------------------------------------
 # Installed in the dev image and in CI. Phase 10 splits these out of the
