@@ -5678,5 +5678,3211 @@
       "79.1% of test fraud (2,438 of 3,083) was abstained on outright -- the account appeared in no ring at all, so Tier-3 could not have caught it at any threshold.",
       "96.3% of scoreable test fraud sat in a ring but scored below the 0.6785 operating threshold."
     ]
+  },
+  {
+    "model_id": "meta-learner-xgboost-ieee-cis-20260824t100225z",
+    "layer": "meta_learner",
+    "algorithm": "xgboost + platt-scaled",
+    "source_dataset": "ieee_cis",
+    "trained_at": "2026-08-24T10:03:14.729159+00:00",
+    "training_window": {
+      "start": "2017-12-21 15:21:35+00:00",
+      "end": "2018-03-31 19:26:36+00:00"
+    },
+    "feature_version": "fv_cf9500687954",
+    "hyperparameters": {
+      "objective": "binary:logistic",
+      "eval_metric": "aucpr",
+      "tree_method": "hist",
+      "max_depth": 4,
+      "learning_rate": 0.05,
+      "min_child_weight": 20.0,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_lambda": 1.0,
+      "max_bin": 256,
+      "nthread": 4,
+      "seed": 42,
+      "verbosity": 0,
+      "num_boost_round": 2000,
+      "early_stopping_rounds": 100,
+      "best_iteration": 2,
+      "calibration": "sigmoid (Platt)",
+      "calibration_rows": 22146,
+      "calibration_positives": 680,
+      "oof_scheme": "expanding-window forward chaining",
+      "oof_blocks": 5,
+      "oof_dropped_block": 1,
+      "oof_tier1_rounds": 1917,
+      "oof_rank_normalised": true,
+      "ablation_rounds": 300,
+      "ablation_max_depth": 3,
+      "review_threshold": 1.2756434250215841e-07,
+      "block_threshold": 1.8170033842609498e-07
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "meta-learner (XGBoost fusion, Platt-scaled)",
+      "split": "test",
+      "rows": 88581,
+      "positives": 3083,
+      "base_rate": 0.034804,
+      "threshold": 1.2756434250215841e-07,
+      "threshold_criterion": "minimising estimated cost on V-late, raised to respect a 1.0% review-capacity cap",
+      "pr_auc": 0.493687,
+      "pr_auc_no_skill_floor": 0.034804,
+      "lift_over_no_skill": 14.185,
+      "precision": 0.730736,
+      "recall": 0.273759,
+      "f1": 0.398301,
+      "confusion_matrix": {
+        "tn": 85187,
+        "fp": 311,
+        "fn": 2239,
+        "tp": 844
+      },
+      "pr_auc_ci95": [
+        0.476652,
+        0.512233
+      ],
+      "false_positive_cost": {
+        "threshold": 1.2756434250215841e-07,
+        "units": "IEEE-CIS amount units (consistent with USD)",
+        "review_cost_per_false_positive": 3.0079,
+        "flat_chargeback_fee_per_false_negative": 15.0395,
+        "false_positives": 311,
+        "false_negatives": 2239,
+        "false_positive_cost": 935.46,
+        "false_negative_cost": 383957.7,
+        "total_cost": 384893.16,
+        "unit": "transaction",
+        "cost_per_1000_transactions": 4345.0984,
+        "flagged": 1155,
+        "flag_rate": 0.013039,
+        "assumptions": [
+          "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "notes": [
+        "Retained blocks: engineered, tier1.",
+        "Feature set fixed on the validation arbiter slice before test was scored; test was scored once, for reporting only."
+      ],
+      "calibration": {
+        "brier": 0.029701,
+        "expected_calibration_error": 0.029746,
+        "bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "count": 88014,
+            "mean_predicted": 2.1e-05,
+            "observed_frequency": 0.029234
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "count": 11,
+            "mean_predicted": 0.14627,
+            "observed_frequency": 0.636364
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.30000000000000004,
+            "count": 2,
+            "mean_predicted": 0.235784,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.30000000000000004,
+            "bin_upper": 0.4,
+            "count": 2,
+            "mean_predicted": 0.370063,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "count": 3,
+            "mean_predicted": 0.462618,
+            "observed_frequency": 0.666667
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6000000000000001,
+            "count": 2,
+            "mean_predicted": 0.568612,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.6000000000000001,
+            "bin_upper": 0.7000000000000001,
+            "count": 2,
+            "mean_predicted": 0.620092,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.7000000000000001,
+            "bin_upper": 0.8,
+            "count": 8,
+            "mean_predicted": 0.766764,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "count": 7,
+            "mean_predicted": 0.859918,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "count": 530,
+            "mean_predicted": 0.997262,
+            "observed_frequency": 0.901887
+          }
+        ]
+      },
+      "calibration_baseline_isotonic": {
+        "verdict": "Not shipped. Isotonic is piecewise-constant, so it ties scores and moves PR-AUC by an artefact of step width; the sigmoid is strictly monotone and leaves the ranking exactly intact. Reported here because a baseline that lost is a comparison, not something to discard.",
+        "isotonic": {
+          "pr_auc": 0.471726,
+          "brier": 0.023606,
+          "expected_calibration_error": 0.002075,
+          "distinct_scores": 146
+        },
+        "sigmoid": {
+          "pr_auc": 0.493687,
+          "brier": 0.029701,
+          "expected_calibration_error": 0.029746,
+          "distinct_scores": 73758
+        }
+      },
+      "delta_vs_tier1_alone": {
+        "delta": -0.026542,
+        "interval": [
+          -0.03359,
+          -0.01955
+        ],
+        "verdict": "excludes zero"
+      },
+      "ablation_validation": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.589733,
+          "engineered+tier1": 0.593703,
+          "base": 0.593703,
+          "tier1+tier2+tier3_served+tier3_topology": 0.580534,
+          "engineered+tier2+tier3_served+tier3_topology": 0.162246,
+          "engineered+tier1+tier3_served+tier3_topology": 0.587328,
+          "engineered+tier1+tier2": 0.595651,
+          "engineered+tier1+tier2+tier3_topology": 0.59157,
+          "engineered+tier1+tier3_served": 0.593281,
+          "engineered+tier1+tier2+tier3_served": 0.593015,
+          "engineered+tier1+tier3_topology": 0.58975
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.009199,
+            "interval": [
+              0.001133,
+              0.017945
+            ],
+            "interval_width": 0.016812,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.427487,
+            "interval": [
+              0.398571,
+              0.454482
+            ],
+            "interval_width": 0.055911,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": 0.002405,
+            "interval": [
+              -0.000555,
+              0.005377
+            ],
+            "interval_width": 0.005932,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": 0.001948,
+            "interval": [
+              -0.000562,
+              0.004516
+            ],
+            "interval_width": 0.005078,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -0.001837,
+            "interval": [
+              -0.004872,
+              0.00136
+            ],
+            "interval_width": 0.006232,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": -0.000422,
+            "interval": [
+              -0.004602,
+              0.00366
+            ],
+            "interval_width": 0.008262,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.003282,
+            "interval": [
+              -0.007123,
+              0.000234
+            ],
+            "interval_width": 0.007358,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": -0.003954,
+            "interval": [
+              -0.009269,
+              0.000559
+            ],
+            "interval_width": 0.009829,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta +0.0024, 95% CI [-0.0006, +0.0054], width 0.0059. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_served",
+            "retained": false,
+            "rationale": "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta -0.0004, 95% CI [-0.0046, +0.0037], width 0.0083. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0033, 95% CI [-0.0071, +0.0002], width 0.0074. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1"
+        ]
+      },
+      "ablation_train_oof": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.577339,
+          "engineered+tier1": 0.576167,
+          "base": 0.576167,
+          "tier1+tier2+tier3_served+tier3_topology": 0.573464,
+          "engineered+tier2+tier3_served+tier3_topology": 0.201359,
+          "engineered+tier1+tier3_served+tier3_topology": 0.582413,
+          "engineered+tier1+tier2": 0.575133,
+          "engineered+tier1+tier2+tier3_topology": 0.580892,
+          "engineered+tier1+tier3_served": 0.589236,
+          "engineered+tier1+tier2+tier3_served": 0.583979,
+          "engineered+tier1+tier3_topology": 0.582485
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.003874,
+            "interval": [
+              -0.00537,
+              0.013784
+            ],
+            "interval_width": 0.019154,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.37598,
+            "interval": [
+              0.348412,
+              0.40319
+            ],
+            "interval_width": 0.054778,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": -0.005074,
+            "interval": [
+              -0.008386,
+              -0.001524
+            ],
+            "interval_width": 0.006862,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": -0.001034,
+            "interval": [
+              -0.004,
+              0.00202
+            ],
+            "interval_width": 0.00602,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -0.003553,
+            "interval": [
+              -0.007017,
+              -0.000168
+            ],
+            "interval_width": 0.006849,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.013069,
+            "interval": [
+              0.008998,
+              0.017428
+            ],
+            "interval_width": 0.00843,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.00664,
+            "interval": [
+              -0.012798,
+              -0.000292
+            ],
+            "interval_width": 0.012506,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": 0.006318,
+            "interval": [
+              -0.000611,
+              0.0126
+            ],
+            "interval_width": 0.013211,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta -0.0010, 95% CI [-0.0040, +0.0020], width 0.0060. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_served",
+            "retained": true,
+            "rationale": "tier3_served: retained -- add_one delta +0.0131, 95% CI [+0.0090, +0.0174], lower bound above zero at n=31,003 (1,131 positives)."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0063, 95% CI [-0.0006, +0.0126], width 0.0132. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1",
+          "tier3_served"
+        ]
+      },
+      "out_of_fold_handicap": [
+        {
+          "fold": 2,
+          "train_rows": 82675,
+          "train_positives": 2221,
+          "validation_pr_auc": 0.419987
+        },
+        {
+          "fold": 3,
+          "train_rows": 165351,
+          "train_positives": 4571,
+          "validation_pr_auc": 0.458702
+        },
+        {
+          "fold": 4,
+          "train_rows": 248026,
+          "train_positives": 8063,
+          "validation_pr_auc": 0.477637
+        },
+        {
+          "fold": 5,
+          "train_rows": 330702,
+          "train_positives": 11180,
+          "validation_pr_auc": 0.52016
+        },
+        {
+          "fold": "full",
+          "train_rows": 413378,
+          "train_positives": 14538,
+          "validation_pr_auc": 0.615475
+        }
+      ],
+      "validation_slices": [
+        {
+          "slice": "V-fit",
+          "rows": 35432,
+          "positives": 1231,
+          "base_rate": 0.034743,
+          "first_event": "2018-03-31 19:26:43+00:00",
+          "last_event": "2018-04-12 12:31:11+00:00"
+        },
+        {
+          "slice": "V-arb",
+          "rows": 31003,
+          "positives": 1131,
+          "base_rate": 0.03648,
+          "first_event": "2018-04-12 12:31:34+00:00",
+          "last_event": "2018-04-24 02:31:07+00:00"
+        },
+        {
+          "slice": "V-late",
+          "rows": 22146,
+          "positives": 680,
+          "base_rate": 0.030705,
+          "first_event": "2018-04-24 02:31:25+00:00",
+          "last_event": "2018-05-02 05:17:20+00:00"
+        }
+      ],
+      "tier2_memorisation": {
+        "included_clean_rows": 35899,
+        "excluded_clean_rows": 28569,
+        "fraud_rows": 5856,
+        "memorisation_auc": 0.950091,
+        "fraud_auc": 0.862818,
+        "residual_auc": 0.364853
+      },
+      "tier3_circularity": {
+        "note": "The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it.",
+        "main_abstention_rate": 0.717882,
+        "control_abstention_rate": 0.985378
+      },
+      "latency": {}
+    },
+    "baseline_comparison": [
+      {
+        "model": "Tier-1 alone (tier1-anomaly-lightgbm-ieee-cis-20260822t185154z)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.9736328125,
+        "threshold_criterion": "flagging at most 1.0% of test traffic, for a like-for-like comparison only",
+        "pr_auc": 0.520229,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 14.947,
+        "precision": 0.863839,
+        "recall": 0.251054,
+        "f1": 0.389042,
+        "confusion_matrix": {
+          "tn": 85376,
+          "fp": 122,
+          "fn": 2309,
+          "tp": 774
+        },
+        "pr_auc_ci95": [
+          0.504361,
+          0.538638
+        ]
+      }
+    ],
+    "artifact": "artifacts\\meta-learner-xgboost-ieee-cis-20260824t100225z.json",
+    "notes": [
+      "Headline against Tier-1 alone: -0.0265, 95% CI [-0.0336, -0.0195] -- the interval excludes zero.",
+      "Out-of-fold Tier-1: 5 forward-chaining blocks over the train split, block 1 dropped (no predecessor to score it), 1917 rounds per fold fixed from the registered model's best_iteration, each fold refitting its own input spec. Fold feature versions: ['fv_96aa13d9cceb', 'fv_f6f707927a5c', 'fv_63961b99aeab', 'fv_20845ba7bb4e'].",
+      "engineered: retained (base block, exempt from retirement).",
+      "tier1: retained (base block, exempt from retirement).",
+      "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta +0.0024, 95% CI [-0.0006, +0.0054], width 0.0059. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta -0.0004, 95% CI [-0.0046, +0.0037], width 0.0083. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_topology: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0033, 95% CI [-0.0071, +0.0002], width 0.0074. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "Keep/drop was arbitrated on the V-arb validation slice, where no tier signal is in-sample. The train-fit column is reported alongside; the disagreement between the two is the measured size of Tier-2's train contamination.",
+      "Tier-2's latent size, window and early-stopping round were all selected on validation, so validation flatters Tier-2 relative to test. A drop verdict is therefore safe (it lost with a thumb on the scale); a keep verdict is suggestive rather than conclusive.",
+      "Tier-1's round count was early-stopped on the full validation split during Phase 2, so all three validation slices carry one Tier-1 hyperparameter tuned on them. It is one scalar over 88,581 rows and cannot be undone without retraining Tier-1.",
+      "tier3_topology is not obtainable from a Tier3Result today. If it was retained above, serving it is a Phase 7 requirement: Tier-3's persisted score table must carry a per-account feature vector.",
+      "Not fitted on PaySim. Its Tier-1 PR-AUC of 0.9999 is a simulator artefact (amount == oldbalanceOrg on 97.49% of fraud), it has no Tier-2 model, and Tier-3 abstains on 100% of its test transactions. See BUILD_LOG.md Phase 2 finding 3.",
+      "top_features is an evasion oracle: authenticated internal reviewers only, never returned to the transacting party.",
+      "Tier-2 memorisation diagnostic: {'included_clean_rows': 35899, 'excluded_clean_rows': 28569, 'fraud_rows': 5856, 'memorisation_auc': 0.950091, 'fraud_auc': 0.862818, 'residual_auc': 0.364853}.",
+      "Tier-3 circularity control: The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it."
+    ]
+  },
+  {
+    "model_id": "meta-learner-xgboost-ieee-cis-20260824t104214z",
+    "layer": "meta_learner",
+    "algorithm": "xgboost + platt-scaled",
+    "source_dataset": "ieee_cis",
+    "trained_at": "2026-08-24T10:44:30.286860+00:00",
+    "training_window": {
+      "start": "2017-12-21 15:21:35+00:00",
+      "end": "2018-03-31 19:26:36+00:00"
+    },
+    "feature_version": "fv_cf9500687954",
+    "hyperparameters": {
+      "objective": "binary:logistic",
+      "eval_metric": "aucpr",
+      "tree_method": "hist",
+      "max_depth": 4,
+      "learning_rate": 0.05,
+      "min_child_weight": 20.0,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_lambda": 1.0,
+      "max_bin": 256,
+      "nthread": 4,
+      "seed": 42,
+      "verbosity": 0,
+      "num_boost_round": 2000,
+      "early_stopping_rounds": 100,
+      "best_iteration": 2,
+      "calibration": "sigmoid (Platt)",
+      "calibration_rows": 22146,
+      "calibration_positives": 680,
+      "oof_scheme": "expanding-window forward chaining",
+      "oof_blocks": 5,
+      "oof_dropped_block": 1,
+      "oof_tier1_rounds": 1917,
+      "oof_rank_normalised": true,
+      "ablation_rounds": 300,
+      "ablation_max_depth": 3,
+      "review_threshold": 1.2716298598025705e-07,
+      "block_threshold": 1.8166475008220905e-07
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "meta-learner (XGBoost fusion, Platt-scaled)",
+      "split": "test",
+      "rows": 88581,
+      "positives": 3083,
+      "base_rate": 0.034804,
+      "threshold": 1.2716298598025705e-07,
+      "threshold_criterion": "minimising estimated cost on V-late, raised to respect a 1.0% review-capacity cap",
+      "pr_auc": 0.493709,
+      "pr_auc_no_skill_floor": 0.034804,
+      "lift_over_no_skill": 14.185,
+      "precision": 0.730503,
+      "recall": 0.273435,
+      "f1": 0.397923,
+      "confusion_matrix": {
+        "tn": 85187,
+        "fp": 311,
+        "fn": 2240,
+        "tp": 843
+      },
+      "pr_auc_ci95": [
+        0.476387,
+        0.512635
+      ],
+      "false_positive_cost": {
+        "threshold": 1.2716298598025705e-07,
+        "units": "IEEE-CIS amount units (consistent with USD)",
+        "review_cost_per_false_positive": 3.0079,
+        "flat_chargeback_fee_per_false_negative": 15.0395,
+        "false_positives": 311,
+        "false_negatives": 2240,
+        "false_positive_cost": 935.46,
+        "false_negative_cost": 384069.74,
+        "total_cost": 385005.2,
+        "unit": "transaction",
+        "cost_per_1000_transactions": 4346.3632,
+        "flagged": 1154,
+        "flag_rate": 0.013028,
+        "assumptions": [
+          "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "notes": [
+        "Retained blocks: engineered, tier1.",
+        "Feature set fixed on the validation arbiter slice before test was scored; test was scored once, for reporting only."
+      ],
+      "calibration": {
+        "brier": 0.029692,
+        "expected_calibration_error": 0.029736,
+        "bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "count": 88013,
+            "mean_predicted": 2.1e-05,
+            "observed_frequency": 0.029223
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "count": 11,
+            "mean_predicted": 0.146282,
+            "observed_frequency": 0.636364
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.30000000000000004,
+            "count": 2,
+            "mean_predicted": 0.235804,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.30000000000000004,
+            "bin_upper": 0.4,
+            "count": 2,
+            "mean_predicted": 0.370092,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "count": 3,
+            "mean_predicted": 0.462652,
+            "observed_frequency": 0.666667
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6000000000000001,
+            "count": 2,
+            "mean_predicted": 0.568648,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.6000000000000001,
+            "bin_upper": 0.7000000000000001,
+            "count": 2,
+            "mean_predicted": 0.620127,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.7000000000000001,
+            "bin_upper": 0.8,
+            "count": 8,
+            "mean_predicted": 0.766794,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "count": 6,
+            "mean_predicted": 0.860816,
+            "observed_frequency": 1.0
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "count": 532,
+            "mean_predicted": 0.997716,
+            "observed_frequency": 0.902256
+          }
+        ]
+      },
+      "calibration_baseline_isotonic": {
+        "verdict": "Not shipped. Isotonic is piecewise-constant, so it ties scores and moves PR-AUC by an artefact of step width; the sigmoid is strictly monotone and leaves the ranking exactly intact. Reported here because a baseline that lost is a comparison, not something to discard.",
+        "isotonic": {
+          "pr_auc": 0.473647,
+          "brier": 0.023596,
+          "expected_calibration_error": 0.002172,
+          "distinct_scores": 154
+        },
+        "sigmoid": {
+          "pr_auc": 0.493709,
+          "brier": 0.029692,
+          "expected_calibration_error": 0.029736,
+          "distinct_scores": 73760
+        }
+      },
+      "delta_vs_tier1_alone": {
+        "delta": -0.033863,
+        "interval": [
+          -0.041108,
+          -0.026836
+        ],
+        "verdict": "excludes zero"
+      },
+      "ablation_validation": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.588497,
+          "engineered+tier1": 0.592407,
+          "base": 0.592407,
+          "tier1+tier2+tier3_served+tier3_topology": 0.583656,
+          "engineered+tier2+tier3_served+tier3_topology": 0.162246,
+          "engineered+tier1+tier3_served+tier3_topology": 0.586495,
+          "engineered+tier1+tier2": 0.593604,
+          "engineered+tier1+tier2+tier3_topology": 0.588566,
+          "engineered+tier1+tier3_served": 0.59316,
+          "engineered+tier1+tier2+tier3_served": 0.594564,
+          "engineered+tier1+tier3_topology": 0.587673
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.004841,
+            "interval": [
+              -0.004112,
+              0.013705
+            ],
+            "interval_width": 0.017817,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.426251,
+            "interval": [
+              0.396868,
+              0.453492
+            ],
+            "interval_width": 0.056624,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": 0.002002,
+            "interval": [
+              -0.001222,
+              0.004869
+            ],
+            "interval_width": 0.006091,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": 0.001198,
+            "interval": [
+              -0.001107,
+              0.003492
+            ],
+            "interval_width": 0.0046,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -6.9e-05,
+            "interval": [
+              -0.003017,
+              0.003192
+            ],
+            "interval_width": 0.006209,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.000754,
+            "interval": [
+              -0.003393,
+              0.005057
+            ],
+            "interval_width": 0.00845,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.006067,
+            "interval": [
+              -0.010014,
+              -0.002614
+            ],
+            "interval_width": 0.0074,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": -0.004734,
+            "interval": [
+              -0.010263,
+              0.000965
+            ],
+            "interval_width": 0.011228,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_served",
+            "retained": false,
+            "rationale": "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], width 0.0074. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1"
+        ]
+      },
+      "ablation_train_oof": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.577148,
+          "engineered+tier1": 0.575976,
+          "base": 0.575976,
+          "tier1+tier2+tier3_served+tier3_topology": 0.572445,
+          "engineered+tier2+tier3_served+tier3_topology": 0.199288,
+          "engineered+tier1+tier3_served+tier3_topology": 0.581854,
+          "engineered+tier1+tier2": 0.575021,
+          "engineered+tier1+tier2+tier3_topology": 0.579008,
+          "engineered+tier1+tier3_served": 0.58919,
+          "engineered+tier1+tier2+tier3_served": 0.5842,
+          "engineered+tier1+tier3_topology": 0.581757
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.004703,
+            "interval": [
+              -0.004164,
+              0.014547
+            ],
+            "interval_width": 0.018711,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.37786,
+            "interval": [
+              0.350927,
+              0.404781
+            ],
+            "interval_width": 0.053855,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": -0.004706,
+            "interval": [
+              -0.007971,
+              -0.001149
+            ],
+            "interval_width": 0.006823,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": -0.000954,
+            "interval": [
+              -0.003935,
+              0.00204
+            ],
+            "interval_width": 0.005976,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -0.00186,
+            "interval": [
+              -0.005444,
+              0.001852
+            ],
+            "interval_width": 0.007295,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.013215,
+            "interval": [
+              0.00905,
+              0.017804
+            ],
+            "interval_width": 0.008754,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.007052,
+            "interval": [
+              -0.013216,
+              -0.000463
+            ],
+            "interval_width": 0.012753,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": 0.005781,
+            "interval": [
+              -0.000743,
+              0.011662
+            ],
+            "interval_width": 0.012405,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta -0.0010, 95% CI [-0.0039, +0.0020], width 0.0060. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_served",
+            "retained": true,
+            "rationale": "tier3_served: retained -- add_one delta +0.0132, 95% CI [+0.0090, +0.0178], lower bound above zero at n=31,003 (1,131 positives)."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0058, 95% CI [-0.0007, +0.0117], width 0.0124. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1",
+          "tier3_served"
+        ]
+      },
+      "out_of_fold_handicap": [
+        {
+          "fold": 2,
+          "train_rows": 82675,
+          "train_positives": 2221,
+          "validation_pr_auc": 0.419987
+        },
+        {
+          "fold": 3,
+          "train_rows": 165351,
+          "train_positives": 4571,
+          "validation_pr_auc": 0.458702
+        },
+        {
+          "fold": 4,
+          "train_rows": 248026,
+          "train_positives": 8063,
+          "validation_pr_auc": 0.477637
+        },
+        {
+          "fold": 5,
+          "train_rows": 330702,
+          "train_positives": 11180,
+          "validation_pr_auc": 0.52016
+        },
+        {
+          "fold": "full",
+          "train_rows": 413378,
+          "train_positives": 14538,
+          "validation_pr_auc": 0.615475
+        }
+      ],
+      "validation_slices": [
+        {
+          "slice": "V-fit",
+          "rows": 35432,
+          "positives": 1231,
+          "base_rate": 0.034743,
+          "first_event": "2018-03-31 19:26:43+00:00",
+          "last_event": "2018-04-12 12:31:11+00:00"
+        },
+        {
+          "slice": "V-arb",
+          "rows": 31003,
+          "positives": 1131,
+          "base_rate": 0.03648,
+          "first_event": "2018-04-12 12:31:34+00:00",
+          "last_event": "2018-04-24 02:31:07+00:00"
+        },
+        {
+          "slice": "V-late",
+          "rows": 22146,
+          "positives": 680,
+          "base_rate": 0.030705,
+          "first_event": "2018-04-24 02:31:25+00:00",
+          "last_event": "2018-05-02 05:17:20+00:00"
+        }
+      ],
+      "tier2_memorisation": {
+        "included_clean_rows": 35899,
+        "excluded_clean_rows": 28569,
+        "fraud_rows": 5856,
+        "memorisation_auc": 0.950091,
+        "fraud_auc": 0.862818,
+        "residual_auc": 0.364853
+      },
+      "tier3_circularity": {
+        "note": "The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it.",
+        "main_abstention_rate": 0.717884,
+        "control_abstention_rate": 0.985378
+      },
+      "latency": {}
+    },
+    "baseline_comparison": [
+      {
+        "model": "Tier-1 alone (tier1-anomaly-lightgbm-ieee-cis-20260822t185154z)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.8055435033375382,
+        "threshold_criterion": "flagging at most 1.0% of test traffic, for a like-for-like comparison only",
+        "pr_auc": 0.527572,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 15.158,
+        "precision": 0.86456,
+        "recall": 0.248459,
+        "f1": 0.385991,
+        "confusion_matrix": {
+          "tn": 85378,
+          "fp": 120,
+          "fn": 2317,
+          "tp": 766
+        },
+        "pr_auc_ci95": [
+          0.511655,
+          0.546153
+        ]
+      }
+    ],
+    "artifact": "artifacts\\meta-learner-xgboost-ieee-cis-20260824t104214z.json",
+    "notes": [
+      "Headline against Tier-1 alone: -0.0339, 95% CI [-0.0411, -0.0268] -- the interval excludes zero.",
+      "Out-of-fold Tier-1: 5 forward-chaining blocks over the train split, block 1 dropped (no predecessor to score it), 1917 rounds per fold fixed from the registered model's best_iteration, each fold refitting its own input spec. Fold feature versions: ['fv_96aa13d9cceb', 'fv_f6f707927a5c', 'fv_63961b99aeab', 'fv_20845ba7bb4e'].",
+      "engineered: retained (base block, exempt from retirement).",
+      "tier1: retained (base block, exempt from retirement).",
+      "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_topology: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], width 0.0074. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "Keep/drop was arbitrated on the V-arb validation slice, where no tier signal is in-sample. The train-fit column is reported alongside; the disagreement between the two is the measured size of Tier-2's train contamination.",
+      "Tier-2's latent size, window and early-stopping round were all selected on validation, so validation flatters Tier-2 relative to test. A drop verdict is therefore safe (it lost with a thumb on the scale); a keep verdict is suggestive rather than conclusive.",
+      "Tier-1's round count was early-stopped on the full validation split during Phase 2, so all three validation slices carry one Tier-1 hyperparameter tuned on them. It is one scalar over 88,581 rows and cannot be undone without retraining Tier-1.",
+      "tier3_topology is not obtainable from a Tier3Result today. If it was retained above, serving it is a Phase 7 requirement: Tier-3's persisted score table must carry a per-account feature vector.",
+      "Not fitted on PaySim. Its Tier-1 PR-AUC of 0.9999 is a simulator artefact (amount == oldbalanceOrg on 97.49% of fraud), it has no Tier-2 model, and Tier-3 abstains on 100% of its test transactions. See BUILD_LOG.md Phase 2 finding 3.",
+      "top_features is an evasion oracle: authenticated internal reviewers only, never returned to the transacting party.",
+      "Tier-2 memorisation diagnostic: {'included_clean_rows': 35899, 'excluded_clean_rows': 28569, 'fraud_rows': 5856, 'memorisation_auc': 0.950091, 'fraud_auc': 0.862818, 'residual_auc': 0.364853}.",
+      "Tier-3 circularity control: The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it."
+    ]
+  },
+  {
+    "model_id": "meta-learner-xgboost-ieee-cis-20260824t133619z",
+    "layer": "meta_learner",
+    "algorithm": "xgboost + platt-scaled",
+    "source_dataset": "ieee_cis",
+    "trained_at": "2026-08-24T13:37:08.736716+00:00",
+    "training_window": {
+      "start": "2017-12-21 15:21:35+00:00",
+      "end": "2018-03-31 19:26:36+00:00"
+    },
+    "feature_version": "fv_cf9500687954",
+    "hyperparameters": {
+      "objective": "binary:logistic",
+      "eval_metric": "aucpr",
+      "tree_method": "hist",
+      "max_depth": 4,
+      "learning_rate": 0.05,
+      "min_child_weight": 20.0,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_lambda": 1.0,
+      "max_bin": 256,
+      "nthread": 4,
+      "seed": 42,
+      "verbosity": 0,
+      "num_boost_round": 2000,
+      "early_stopping_rounds": 100,
+      "best_iteration": 2,
+      "trees_scored_with": 3,
+      "calibration": "sigmoid (Platt)",
+      "calibration_rows": 22146,
+      "calibration_positives": 680,
+      "oof_scheme": "expanding-window forward chaining",
+      "oof_blocks": 5,
+      "oof_dropped_block": 1,
+      "oof_tier1_rounds": 1917,
+      "oof_rank_normalised": true,
+      "ablation_rounds": 300,
+      "ablation_max_depth": 3,
+      "review_threshold": 3.1741189701229983e-106,
+      "block_threshold": 2.7302207990437076e-104
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "meta-learner (XGBoost fusion, Platt-scaled)",
+      "split": "test",
+      "rows": 88581,
+      "positives": 3083,
+      "base_rate": 0.034804,
+      "threshold": 3.1741189701229983e-106,
+      "threshold_criterion": "minimising estimated cost on V-late, raised to respect a 1.0% review-capacity cap",
+      "pr_auc": 0.495416,
+      "pr_auc_no_skill_floor": 0.034804,
+      "lift_over_no_skill": 14.234,
+      "precision": 0.737158,
+      "recall": 0.279273,
+      "f1": 0.405081,
+      "confusion_matrix": {
+        "tn": 85191,
+        "fp": 307,
+        "fn": 2222,
+        "tp": 861
+      },
+      "pr_auc_ci95": [
+        0.479087,
+        0.51408
+      ],
+      "false_positive_cost": {
+        "threshold": 3.1741189701229983e-106,
+        "units": "IEEE-CIS amount units (consistent with USD)",
+        "review_cost_per_false_positive": 3.0079,
+        "flat_chargeback_fee_per_false_negative": 15.0395,
+        "false_positives": 307,
+        "false_negatives": 2222,
+        "false_positive_cost": 923.42,
+        "false_negative_cost": 389487.38,
+        "total_cost": 390410.81,
+        "unit": "transaction",
+        "cost_per_1000_transactions": 4407.3877,
+        "flagged": 1168,
+        "flag_rate": 0.013186,
+        "assumptions": [
+          "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "notes": [
+        "Retained blocks: engineered, tier1.",
+        "Every selection was made on validation: the retained feature blocks on V-arb, the calibrator and both thresholds on V-late, the early-stopping round on V-fit. Test selected nothing. It was, however, read more than once and the honest phrasing is not 'scored exactly once': the isotonic baseline is a second scoring, the matched-flag-rate table is a third, and the run was repeated after a score-quantisation bug was found. That repeat moved the meta-learner by 0.00002 and corrected the baseline by 0.0074, i.e. it made the shipped result less flattering, not more."
+      ],
+      "calibration": {
+        "brier": 0.034804,
+        "expected_calibration_error": 0.034804,
+        "bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "count": 88581,
+            "mean_predicted": 0.0,
+            "observed_frequency": 0.034804
+          }
+        ]
+      },
+      "calibration_baseline_isotonic": {
+        "verdict": "Not shipped. Isotonic is piecewise-constant, so it ties scores and moves PR-AUC by an artefact of step width; the sigmoid is strictly monotone and leaves the ranking exactly intact. Reported here because a baseline that lost is a comparison, not something to discard.",
+        "isotonic": {
+          "pr_auc": 0.48235,
+          "brier": 0.022905,
+          "expected_calibration_error": 0.002178,
+          "distinct_scores": 25
+        },
+        "sigmoid": {
+          "pr_auc": 0.495416,
+          "brier": 0.034804,
+          "expected_calibration_error": 0.034804,
+          "distinct_scores": 105
+        }
+      },
+      "delta_vs_tier1_alone": {
+        "delta": -0.032157,
+        "interval": [
+          -0.037348,
+          -0.027291
+        ],
+        "verdict": "excludes zero"
+      },
+      "matched_flag_rate_comparison": {
+        "meta": {
+          "threshold": 7.281000333634855e-105,
+          "flag_rate": 0.009393,
+          "precision": 0.825721,
+          "recall": 0.222835,
+          "confusion_matrix": {
+            "tn": 85353,
+            "fp": 145,
+            "fn": 2396,
+            "tp": 687
+          },
+          "cost_per_1000": 4817.97,
+          "note": "Matched-flag-rate view, computed on test AFTER the shipped thresholds were fixed on validation. Reported for comparability only; it selects nothing."
+        },
+        "tier1": {
+          "threshold": 0.8060167425659784,
+          "flag_rate": 0.010002,
+          "precision": 0.86456,
+          "recall": 0.248459,
+          "confusion_matrix": {
+            "tn": 85378,
+            "fp": 120,
+            "fn": 2317,
+            "tp": 766
+          },
+          "cost_per_1000": 4903.53,
+          "note": "Matched-flag-rate view, computed on test AFTER the shipped thresholds were fixed on validation. Reported for comparability only; it selects nothing."
+        }
+      },
+      "ablation_validation": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.588497,
+          "engineered+tier1": 0.592407,
+          "base": 0.592407,
+          "tier1+tier2+tier3_served+tier3_topology": 0.583656,
+          "engineered+tier2+tier3_served+tier3_topology": 0.162246,
+          "engineered+tier1+tier3_served+tier3_topology": 0.586495,
+          "engineered+tier1+tier2": 0.593604,
+          "engineered+tier1+tier2+tier3_topology": 0.588566,
+          "engineered+tier1+tier3_served": 0.59316,
+          "engineered+tier1+tier2+tier3_served": 0.594564,
+          "engineered+tier1+tier3_topology": 0.587673
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.004841,
+            "interval": [
+              -0.004112,
+              0.013705
+            ],
+            "interval_width": 0.017817,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.426251,
+            "interval": [
+              0.396868,
+              0.453492
+            ],
+            "interval_width": 0.056624,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": 0.002002,
+            "interval": [
+              -0.001222,
+              0.004869
+            ],
+            "interval_width": 0.006091,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": 0.001198,
+            "interval": [
+              -0.001107,
+              0.003492
+            ],
+            "interval_width": 0.0046,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -6.9e-05,
+            "interval": [
+              -0.003017,
+              0.003192
+            ],
+            "interval_width": 0.006209,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.000754,
+            "interval": [
+              -0.003393,
+              0.005057
+            ],
+            "interval_width": 0.00845,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.006067,
+            "interval": [
+              -0.010014,
+              -0.002614
+            ],
+            "interval_width": 0.0074,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": -0.004734,
+            "interval": [
+              -0.010263,
+              0.000965
+            ],
+            "interval_width": 0.011228,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_served",
+            "retained": false,
+            "rationale": "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired -- leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1"
+        ]
+      },
+      "ablation_train_oof": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.577237,
+          "engineered+tier1": 0.575976,
+          "base": 0.575976,
+          "tier1+tier2+tier3_served+tier3_topology": 0.57348,
+          "engineered+tier2+tier3_served+tier3_topology": 0.201359,
+          "engineered+tier1+tier3_served+tier3_topology": 0.582263,
+          "engineered+tier1+tier2": 0.575021,
+          "engineered+tier1+tier2+tier3_topology": 0.580712,
+          "engineered+tier1+tier3_served": 0.589156,
+          "engineered+tier1+tier2+tier3_served": 0.583805,
+          "engineered+tier1+tier3_topology": 0.582335
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.003756,
+            "interval": [
+              -0.005502,
+              0.013569
+            ],
+            "interval_width": 0.019071,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.375878,
+            "interval": [
+              0.348255,
+              0.403206
+            ],
+            "interval_width": 0.054951,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": -0.005027,
+            "interval": [
+              -0.008356,
+              -0.001406
+            ],
+            "interval_width": 0.00695,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": -0.000954,
+            "interval": [
+              -0.003935,
+              0.00204
+            ],
+            "interval_width": 0.005976,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -0.003476,
+            "interval": [
+              -0.006966,
+              -7.3e-05
+            ],
+            "interval_width": 0.006893,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.01318,
+            "interval": [
+              0.009118,
+              0.01748
+            ],
+            "interval_width": 0.008362,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.006569,
+            "interval": [
+              -0.012674,
+              -0.000195
+            ],
+            "interval_width": 0.012479,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": 0.00636,
+            "interval": [
+              -0.000623,
+              0.012607
+            ],
+            "interval_width": 0.01323,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired -- leave_one_out delta -0.0050, 95% CI [-0.0084, -0.0014], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          },
+          {
+            "block": "tier3_served",
+            "retained": true,
+            "rationale": "tier3_served: retained -- add_one delta +0.0132, 95% CI [+0.0091, +0.0175], lower bound above zero at n=31,003 (1,131 positives)."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired -- leave_one_out delta -0.0066, 95% CI [-0.0127, -0.0002], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1",
+          "tier3_served"
+        ]
+      },
+      "out_of_fold_handicap": [
+        {
+          "fold": 2,
+          "train_rows": 82675,
+          "train_positives": 2221,
+          "validation_pr_auc": 0.419987
+        },
+        {
+          "fold": 3,
+          "train_rows": 165351,
+          "train_positives": 4571,
+          "validation_pr_auc": 0.458702
+        },
+        {
+          "fold": 4,
+          "train_rows": 248026,
+          "train_positives": 8063,
+          "validation_pr_auc": 0.477637
+        },
+        {
+          "fold": 5,
+          "train_rows": 330702,
+          "train_positives": 11180,
+          "validation_pr_auc": 0.52016
+        },
+        {
+          "fold": "full",
+          "train_rows": 413378,
+          "train_positives": 14538,
+          "validation_pr_auc": 0.615475
+        }
+      ],
+      "validation_slices": [
+        {
+          "slice": "V-fit",
+          "rows": 35432,
+          "positives": 1231,
+          "base_rate": 0.034743,
+          "first_event": "2018-03-31 19:26:43+00:00",
+          "last_event": "2018-04-12 12:31:11+00:00"
+        },
+        {
+          "slice": "V-arb",
+          "rows": 31003,
+          "positives": 1131,
+          "base_rate": 0.03648,
+          "first_event": "2018-04-12 12:31:34+00:00",
+          "last_event": "2018-04-24 02:31:07+00:00"
+        },
+        {
+          "slice": "V-late",
+          "rows": 22146,
+          "positives": 680,
+          "base_rate": 0.030705,
+          "first_event": "2018-04-24 02:31:25+00:00",
+          "last_event": "2018-05-02 05:17:20+00:00"
+        }
+      ],
+      "tier2_memorisation": {
+        "included_clean_rows": 35899,
+        "excluded_clean_rows": 28569,
+        "fraud_rows": 5856,
+        "memorisation_auc": 0.950091,
+        "fraud_auc": 0.862818,
+        "residual_auc": 0.364853
+      },
+      "tier3_circularity": {
+        "note": "The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it.",
+        "main_abstention_rate": 0.717882,
+        "control_abstention_rate": 0.985378
+      },
+      "latency": {}
+    },
+    "baseline_comparison": [
+      {
+        "model": "Tier-1 alone (tier1-anomaly-lightgbm-ieee-cis-20260822t185154z)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.813709698322036,
+        "threshold_criterion": "flagging at most 1.0% of VALIDATION traffic, transferred to test unchanged -- the same discipline the meta-learner threshold is held to",
+        "pr_auc": 0.527572,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 15.158,
+        "precision": 0.873418,
+        "recall": 0.246189,
+        "f1": 0.384109,
+        "confusion_matrix": {
+          "tn": 85388,
+          "fp": 110,
+          "fn": 2324,
+          "tp": 759
+        },
+        "pr_auc_ci95": [
+          0.511655,
+          0.546153
+        ],
+        "false_positive_cost": {
+          "threshold": 0.813709698322036,
+          "units": "IEEE-CIS amount units (consistent with USD)",
+          "review_cost_per_false_positive": 3.0079,
+          "flat_chargeback_fee_per_false_negative": 15.0395,
+          "false_positives": 110,
+          "false_negatives": 2324,
+          "false_positive_cost": 330.87,
+          "false_negative_cost": 435801.6,
+          "total_cost": 436132.47,
+          "unit": "transaction",
+          "cost_per_1000_transactions": 4923.5442,
+          "flagged": 869,
+          "flag_rate": 0.00981,
+          "assumptions": [
+            "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        }
+      }
+    ],
+    "artifact": "artifacts\\meta-learner-xgboost-ieee-cis-20260824t133619z.json",
+    "notes": [
+      "Supersedes meta-learner-xgboost-ieee-cis-20260824t100225z, which was produced before a score-quantisation bug was fixed. The registry is append-only, so the earlier entry remains; supersession can only be recorded forward, and this is it. That entry's Tier-1 baseline reads 0.5202 rather than its true 0.5276.",
+      "Headline against Tier-1 alone: -0.0322, 95% CI [-0.0373, -0.0273] -- the interval excludes zero.",
+      "Out-of-fold Tier-1: 5 forward-chaining blocks over the train split, block 1 dropped (no predecessor to score it), 1917 rounds per fold fixed from the registered model's best_iteration, each fold refitting its own input spec. Fold feature versions: ['fv_96aa13d9cceb', 'fv_f6f707927a5c', 'fv_63961b99aeab', 'fv_20845ba7bb4e'].",
+      "engineered: retained (base block, exempt from retirement).",
+      "tier1: retained (base block, exempt from retirement).",
+      "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_topology: retired -- leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification.",
+      "Keep/drop was arbitrated on the V-arb validation slice, where no tier signal is in-sample. The train-fit column is reported alongside; the disagreement between the two is the measured size of Tier-2's train contamination.",
+      "Tier-2's latent size, window and early-stopping round were all selected on validation, so validation flatters Tier-2 relative to test. A drop verdict is therefore safe (it lost with a thumb on the scale); a keep verdict is suggestive rather than conclusive.",
+      "Tier-1's round count was early-stopped on the full validation split during Phase 2, so all three validation slices carry one Tier-1 hyperparameter tuned on them. It is one scalar over 88,581 rows and cannot be undone without retraining Tier-1.",
+      "tier3_topology is not obtainable from a Tier3Result today. If it was retained above, serving it is a Phase 7 requirement: Tier-3's persisted score table must carry a per-account feature vector.",
+      "Not fitted on PaySim. Its Tier-1 PR-AUC of 0.9999 is a simulator artefact (amount == oldbalanceOrg on 97.49% of fraud), it has no Tier-2 model, and Tier-3 abstains on 100% of its test transactions. See BUILD_LOG.md Phase 2 finding 3.",
+      "top_features is an evasion oracle: authenticated internal reviewers only, never returned to the transacting party.",
+      "Tier-2 memorisation diagnostic: {'included_clean_rows': 35899, 'excluded_clean_rows': 28569, 'fraud_rows': 5856, 'memorisation_auc': 0.950091, 'fraud_auc': 0.862818, 'residual_auc': 0.364853}.",
+      "Tier-3 circularity control: The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it."
+    ]
+  },
+  {
+    "model_id": "meta-learner-xgboost-ieee-cis-20260824t141902z",
+    "layer": "meta_learner",
+    "algorithm": "xgboost + platt-scaled",
+    "source_dataset": "ieee_cis",
+    "trained_at": "2026-08-24T14:19:56.719531+00:00",
+    "training_window": {
+      "start": "2017-12-21 15:21:35+00:00",
+      "end": "2018-03-31 19:26:36+00:00"
+    },
+    "feature_version": "fv_1d5b440a14db",
+    "hyperparameters": {
+      "objective": "binary:logistic",
+      "eval_metric": "aucpr",
+      "tree_method": "hist",
+      "max_depth": 4,
+      "learning_rate": 0.05,
+      "min_child_weight": 20.0,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_lambda": 1.0,
+      "max_bin": 256,
+      "nthread": 4,
+      "seed": 42,
+      "verbosity": 0,
+      "num_boost_round": 2000,
+      "early_stopping_rounds": 100,
+      "best_iteration": 2,
+      "trees_scored_with": 3,
+      "calibration": "sigmoid (Platt)",
+      "calibration_rows": 22146,
+      "calibration_positives": 680,
+      "oof_scheme": "expanding-window forward chaining",
+      "oof_blocks": 5,
+      "oof_dropped_block": 1,
+      "oof_tier1_rounds": 1917,
+      "oof_rank_normalised": true,
+      "ablation_rounds": 300,
+      "ablation_max_depth": 3,
+      "review_threshold": 0.6035219404714103,
+      "block_threshold": 0.6052732101577928
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "meta-learner (XGBoost fusion, Platt-scaled)",
+      "split": "test",
+      "rows": 88581,
+      "positives": 3083,
+      "base_rate": 0.034804,
+      "threshold": 0.6035219404714103,
+      "threshold_criterion": "minimising estimated cost on V-late, raised to respect a 1.0% review-capacity cap",
+      "pr_auc": 0.495416,
+      "pr_auc_no_skill_floor": 0.034804,
+      "lift_over_no_skill": 14.234,
+      "precision": 0.82824,
+      "recall": 0.254946,
+      "f1": 0.389881,
+      "confusion_matrix": {
+        "tn": 85335,
+        "fp": 163,
+        "fn": 2297,
+        "tp": 786
+      },
+      "pr_auc_ci95": [
+        0.479087,
+        0.51408
+      ],
+      "false_positive_cost": {
+        "threshold": 0.6035219404714103,
+        "units": "IEEE-CIS amount units (consistent with USD)",
+        "review_cost_per_false_positive": 3.0079,
+        "flat_chargeback_fee_per_false_negative": 15.0395,
+        "false_positives": 163,
+        "false_negatives": 2297,
+        "false_positive_cost": 490.29,
+        "false_negative_cost": 416857.38,
+        "total_cost": 417347.67,
+        "unit": "transaction",
+        "cost_per_1000_transactions": 4711.4806,
+        "flagged": 949,
+        "flag_rate": 0.010713,
+        "assumptions": [
+          "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "notes": [
+        "Retained blocks: engineered, tier1.",
+        "Every selection was made on validation: the retained feature blocks on V-arb, the calibrator and both thresholds on V-late, the early-stopping round on V-fit. Test selected nothing. It was, however, read more than once and the honest phrasing is not 'scored exactly once': the isotonic baseline is a second scoring, the matched-flag-rate table is a third, and the run was repeated after a score-quantisation bug was found. That repeat moved the meta-learner by 0.00002 and corrected the baseline by 0.0074, i.e. it made the shipped result less flattering, not more."
+      ],
+      "calibration": {
+        "brier": 0.023298,
+        "expected_calibration_error": 0.003682,
+        "bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "count": 83918,
+            "mean_predicted": 0.014145,
+            "observed_frequency": 0.015122
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "count": 1674,
+            "mean_predicted": 0.154346,
+            "observed_frequency": 0.155317
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.30000000000000004,
+            "count": 1043,
+            "mean_predicted": 0.286715,
+            "observed_frequency": 0.321189
+          },
+          {
+            "bin_lower": 0.30000000000000004,
+            "bin_upper": 0.4,
+            "count": 349,
+            "mean_predicted": 0.364976,
+            "observed_frequency": 0.469914
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "count": 358,
+            "mean_predicted": 0.460366,
+            "observed_frequency": 0.430168
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6000000000000001,
+            "count": 290,
+            "mean_predicted": 0.581958,
+            "observed_frequency": 0.396552
+          },
+          {
+            "bin_lower": 0.6000000000000001,
+            "bin_upper": 0.7000000000000001,
+            "count": 170,
+            "mean_predicted": 0.633297,
+            "observed_frequency": 0.776471
+          },
+          {
+            "bin_lower": 0.7000000000000001,
+            "bin_upper": 0.8,
+            "count": 119,
+            "mean_predicted": 0.744843,
+            "observed_frequency": 0.537815
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "count": 14,
+            "mean_predicted": 0.827569,
+            "observed_frequency": 0.785714
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "count": 646,
+            "mean_predicted": 0.982816,
+            "observed_frequency": 0.896285
+          }
+        ]
+      },
+      "calibration_baseline_isotonic": {
+        "verdict": "Not shipped, and 'lost' overstates it. Isotonic is piecewise-constant, so it ties scores and moves PR-AUC by an artefact of step width; the sigmoid is strictly monotone and leaves the ranking exactly intact, which is why the sigmoid ships when PR-AUC is the headline. On calibration itself isotonic is the better of the two, and by how much is worth reading rather than waving at: compare the two ECE figures below. A large gap is not a free win for isotonic -- it is a signal worth investigating, because a correctly-fitted sigmoid on this data should be close.",
+        "isotonic": {
+          "pr_auc": 0.48235,
+          "brier": 0.022905,
+          "expected_calibration_error": 0.002178,
+          "distinct_scores": 25
+        },
+        "sigmoid": {
+          "pr_auc": 0.495416,
+          "brier": 0.023298,
+          "expected_calibration_error": 0.003682,
+          "distinct_scores": 105
+        }
+      },
+      "delta_vs_tier1_alone": {
+        "delta": -0.032157,
+        "interval": [
+          -0.037348,
+          -0.027291
+        ],
+        "verdict": "excludes zero"
+      },
+      "matched_flag_rate_comparison": {
+        "meta": {
+          "threshold": 0.6350712786655359,
+          "flag_rate": 0.009393,
+          "precision": 0.825721,
+          "recall": 0.222835,
+          "recall_by_value": 0.168862,
+          "caught_fraud_value": 79298.96,
+          "missed_fraud_value": 390309.57,
+          "confusion_matrix": {
+            "tn": 85353,
+            "fp": 145,
+            "fn": 2396,
+            "tp": 687
+          },
+          "cost_per_1000": 4817.97,
+          "note": "Matched-flag-rate view. BOTH cuts here are quantiles of the TEST score vectors -- that is what makes the flag rates comparable, and it is why this table selects nothing and is reported only after the shipped thresholds were fixed on validation. The shipped operating points are elsewhere in this entry."
+        },
+        "tier1": {
+          "threshold": 0.8060167425659784,
+          "flag_rate": 0.010002,
+          "precision": 0.86456,
+          "recall": 0.248459,
+          "recall_by_value": 0.150031,
+          "caught_fraud_value": 70455.93,
+          "missed_fraud_value": 399152.59,
+          "confusion_matrix": {
+            "tn": 85378,
+            "fp": 120,
+            "fn": 2317,
+            "tp": 766
+          },
+          "cost_per_1000": 4903.53,
+          "note": "Matched-flag-rate view. BOTH cuts here are quantiles of the TEST score vectors -- that is what makes the flag rates comparable, and it is why this table selects nothing and is reported only after the shipped thresholds were fixed on validation. The shipped operating points are elsewhere in this entry."
+        }
+      },
+      "ablation_validation": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.588497,
+          "engineered+tier1": 0.592407,
+          "base": 0.592407,
+          "tier1+tier2+tier3_served+tier3_topology": 0.583656,
+          "engineered+tier2+tier3_served+tier3_topology": 0.162246,
+          "engineered+tier1+tier3_served+tier3_topology": 0.586495,
+          "engineered+tier1+tier2": 0.593604,
+          "engineered+tier1+tier2+tier3_topology": 0.588566,
+          "engineered+tier1+tier3_served": 0.59316,
+          "engineered+tier1+tier2+tier3_served": 0.594564,
+          "engineered+tier1+tier3_topology": 0.587673
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.004841,
+            "interval": [
+              -0.004112,
+              0.013705
+            ],
+            "interval_width": 0.017817,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.426251,
+            "interval": [
+              0.396868,
+              0.453492
+            ],
+            "interval_width": 0.056624,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": 0.002002,
+            "interval": [
+              -0.001222,
+              0.004869
+            ],
+            "interval_width": 0.006091,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": 0.001198,
+            "interval": [
+              -0.001107,
+              0.003492
+            ],
+            "interval_width": 0.0046,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -6.9e-05,
+            "interval": [
+              -0.003017,
+              0.003192
+            ],
+            "interval_width": 0.006209,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.000754,
+            "interval": [
+              -0.003393,
+              0.005057
+            ],
+            "interval_width": 0.00845,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.006067,
+            "interval": [
+              -0.010014,
+              -0.002614
+            ],
+            "interval_width": 0.0074,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": -0.004734,
+            "interval": [
+              -0.010263,
+              0.000965
+            ],
+            "interval_width": 0.011228,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_served",
+            "retained": false,
+            "rationale": "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired -- leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1"
+        ]
+      },
+      "ablation_train_oof": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.576657,
+          "engineered+tier1": 0.575976,
+          "base": 0.575976,
+          "tier1+tier2+tier3_served+tier3_topology": 0.573705,
+          "engineered+tier2+tier3_served+tier3_topology": 0.19903,
+          "engineered+tier1+tier3_served+tier3_topology": 0.581315,
+          "engineered+tier1+tier2": 0.575021,
+          "engineered+tier1+tier2+tier3_topology": 0.582218,
+          "engineered+tier1+tier3_served": 0.589192,
+          "engineered+tier1+tier2+tier3_served": 0.583922,
+          "engineered+tier1+tier3_topology": 0.581528
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.002952,
+            "interval": [
+              -0.006149,
+              0.013201
+            ],
+            "interval_width": 0.01935,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.377627,
+            "interval": [
+              0.350437,
+              0.404317
+            ],
+            "interval_width": 0.05388,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": -0.004658,
+            "interval": [
+              -0.007981,
+              -0.001141
+            ],
+            "interval_width": 0.00684,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": -0.000954,
+            "interval": [
+              -0.003935,
+              0.00204
+            ],
+            "interval_width": 0.005976,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -0.005561,
+            "interval": [
+              -0.009191,
+              -0.002006
+            ],
+            "interval_width": 0.007185,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.013216,
+            "interval": [
+              0.009049,
+              0.017805
+            ],
+            "interval_width": 0.008756,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.007264,
+            "interval": [
+              -0.013497,
+              -0.000851
+            ],
+            "interval_width": 0.012647,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": 0.005552,
+            "interval": [
+              -0.001221,
+              0.011839
+            ],
+            "interval_width": 0.01306,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired -- leave_one_out delta -0.0047, 95% CI [-0.0080, -0.0011], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          },
+          {
+            "block": "tier3_served",
+            "retained": true,
+            "rationale": "tier3_served: retained -- add_one delta +0.0132, 95% CI [+0.0090, +0.0178], lower bound above zero at n=31,003 (1,131 positives)."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired -- leave_one_out delta -0.0073, 95% CI [-0.0135, -0.0009], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1",
+          "tier3_served"
+        ]
+      },
+      "out_of_fold_handicap": [
+        {
+          "fold": 2,
+          "train_rows": 82675,
+          "train_positives": 2221,
+          "validation_pr_auc": 0.419987
+        },
+        {
+          "fold": 3,
+          "train_rows": 165351,
+          "train_positives": 4571,
+          "validation_pr_auc": 0.458702
+        },
+        {
+          "fold": 4,
+          "train_rows": 248026,
+          "train_positives": 8063,
+          "validation_pr_auc": 0.477637
+        },
+        {
+          "fold": 5,
+          "train_rows": 330702,
+          "train_positives": 11180,
+          "validation_pr_auc": 0.52016
+        },
+        {
+          "fold": "full",
+          "train_rows": 413378,
+          "train_positives": 14538,
+          "validation_pr_auc": 0.615475
+        }
+      ],
+      "validation_slices": [
+        {
+          "slice": "V-fit",
+          "rows": 35432,
+          "positives": 1231,
+          "base_rate": 0.034743,
+          "first_event": "2018-03-31 19:26:43+00:00",
+          "last_event": "2018-04-12 12:31:11+00:00"
+        },
+        {
+          "slice": "V-arb",
+          "rows": 31003,
+          "positives": 1131,
+          "base_rate": 0.03648,
+          "first_event": "2018-04-12 12:31:34+00:00",
+          "last_event": "2018-04-24 02:31:07+00:00"
+        },
+        {
+          "slice": "V-late",
+          "rows": 22146,
+          "positives": 680,
+          "base_rate": 0.030705,
+          "first_event": "2018-04-24 02:31:25+00:00",
+          "last_event": "2018-05-02 05:17:20+00:00"
+        }
+      ],
+      "tier2_memorisation": {
+        "included_clean_rows": 35899,
+        "excluded_clean_rows": 28569,
+        "fraud_rows": 5856,
+        "memorisation_auc": 0.950091,
+        "fraud_auc": 0.862818,
+        "residual_auc": 0.364853
+      },
+      "tier3_circularity": {
+        "note": "The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it.",
+        "main_abstention_rate": 0.717884,
+        "control_abstention_rate": 0.985378
+      },
+      "latency": {}
+    },
+    "baseline_comparison": [
+      {
+        "model": "Tier-1 alone (tier1-anomaly-lightgbm-ieee-cis-20260822t185154z)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.813709698322036,
+        "threshold_criterion": "flagging at most 1.0% of VALIDATION traffic, transferred to test unchanged -- the same discipline the meta-learner threshold is held to",
+        "pr_auc": 0.527572,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 15.158,
+        "precision": 0.873418,
+        "recall": 0.246189,
+        "f1": 0.384109,
+        "confusion_matrix": {
+          "tn": 85388,
+          "fp": 110,
+          "fn": 2324,
+          "tp": 759
+        },
+        "pr_auc_ci95": [
+          0.511655,
+          0.546153
+        ],
+        "false_positive_cost": {
+          "threshold": 0.813709698322036,
+          "units": "IEEE-CIS amount units (consistent with USD)",
+          "review_cost_per_false_positive": 3.0079,
+          "flat_chargeback_fee_per_false_negative": 15.0395,
+          "false_positives": 110,
+          "false_negatives": 2324,
+          "false_positive_cost": 330.87,
+          "false_negative_cost": 435801.6,
+          "total_cost": 436132.47,
+          "unit": "transaction",
+          "cost_per_1000_transactions": 4923.5442,
+          "flagged": 869,
+          "flag_rate": 0.00981,
+          "assumptions": [
+            "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        }
+      }
+    ],
+    "artifact": "artifacts\\meta-learner-xgboost-ieee-cis-20260824t141902z.json",
+    "notes": [
+      "Supersedes every earlier meta_learner entry: meta-learner-xgboost-ieee-cis-20260824t100225z, meta-learner-xgboost-ieee-cis-20260824t104214z, meta-learner-xgboost-ieee-cis-20260824t133619z. The registry is append-only, so those entries remain and still carry the defects they were produced with -- a test-chosen Tier-1 baseline, a quantisation-damaged one reading 0.5202 instead of 0.5276, and a retirement sentence asserting an interval 'does not exclude zero' when it excludes zero negatively. Supersession can only be recorded forward, and this is that record.",
+      "Headline against Tier-1 alone: -0.0322, 95% CI [-0.0373, -0.0273] -- the interval excludes zero.",
+      "Out-of-fold Tier-1: 5 forward-chaining blocks over the train split, block 1 dropped (no predecessor to score it), 1917 rounds per fold fixed from the registered model's best_iteration, each fold refitting its own input spec. Fold feature versions: ['fv_96aa13d9cceb', 'fv_f6f707927a5c', 'fv_63961b99aeab', 'fv_20845ba7bb4e'].",
+      "engineered: retained (base block, exempt from retirement).",
+      "tier1: retained (base block, exempt from retirement).",
+      "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_topology: retired -- leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification.",
+      "Keep/drop was arbitrated on the V-arb validation slice, where no tier signal is in-sample. The train-fit column is reported alongside; the disagreement between the two is the measured size of Tier-2's train contamination.",
+      "Tier-2's latent size, window and early-stopping round were all selected on validation, so validation flatters Tier-2 relative to test. A drop verdict is therefore safe (it lost with a thumb on the scale); a keep verdict is suggestive rather than conclusive.",
+      "Tier-1's round count was early-stopped on the full validation split during Phase 2, so all three validation slices carry one Tier-1 hyperparameter tuned on them. It is one scalar over 88,581 rows and cannot be undone without retraining Tier-1.",
+      "tier3_topology is not obtainable from a Tier3Result today. If it was retained above, serving it is a Phase 7 requirement: Tier-3's persisted score table must carry a per-account feature vector.",
+      "Not fitted on PaySim. Its Tier-1 PR-AUC of 0.9999 is a simulator artefact (amount == oldbalanceOrg on 97.49% of fraud), it has no Tier-2 model, and Tier-3 abstains on 100% of its test transactions. See BUILD_LOG.md Phase 2 finding 3.",
+      "top_features is an evasion oracle: authenticated internal reviewers only, never returned to the transacting party.",
+      "Tier-2 memorisation diagnostic: {'included_clean_rows': 35899, 'excluded_clean_rows': 28569, 'fraud_rows': 5856, 'memorisation_auc': 0.950091, 'fraud_auc': 0.862818, 'residual_auc': 0.364853}.",
+      "Tier-3 circularity control: The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it."
+    ]
+  },
+  {
+    "model_id": "meta-learner-xgboost-ieee-cis-20260824t145659z",
+    "layer": "meta_learner",
+    "algorithm": "xgboost + platt-scaled",
+    "source_dataset": "ieee_cis",
+    "trained_at": "2026-08-24T14:57:48.300929+00:00",
+    "training_window": {
+      "start": "2017-12-21 15:21:35+00:00",
+      "end": "2018-03-31 19:26:36+00:00"
+    },
+    "feature_version": "fv_89b8503a0d8b",
+    "hyperparameters": {
+      "objective": "binary:logistic",
+      "eval_metric": "aucpr",
+      "tree_method": "hist",
+      "max_depth": 4,
+      "learning_rate": 0.05,
+      "min_child_weight": 20.0,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_lambda": 1.0,
+      "max_bin": 256,
+      "nthread": 4,
+      "seed": 42,
+      "verbosity": 0,
+      "num_boost_round": 2000,
+      "early_stopping_rounds": 100,
+      "best_iteration": 2,
+      "trees_scored_with": 3,
+      "calibration": "sigmoid (Platt)",
+      "calibration_rows": 22146,
+      "calibration_positives": 680,
+      "oof_scheme": "expanding-window forward chaining",
+      "oof_blocks": 5,
+      "oof_dropped_block": 1,
+      "oof_tier1_rounds": 1917,
+      "oof_rank_normalised": true,
+      "ablation_rounds": 300,
+      "ablation_max_depth": 3,
+      "review_threshold": 0.6035219404714103,
+      "block_threshold": 0.6052732101577928
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "meta-learner (XGBoost fusion, Platt-scaled)",
+      "split": "test",
+      "rows": 88581,
+      "positives": 3083,
+      "base_rate": 0.034804,
+      "threshold": 0.6035219404714103,
+      "threshold_criterion": "minimising estimated cost on V-late, raised to respect a 1.0% review-capacity cap",
+      "pr_auc": 0.495416,
+      "pr_auc_no_skill_floor": 0.034804,
+      "lift_over_no_skill": 14.234,
+      "precision": 0.82824,
+      "recall": 0.254946,
+      "f1": 0.389881,
+      "confusion_matrix": {
+        "tn": 85335,
+        "fp": 163,
+        "fn": 2297,
+        "tp": 786
+      },
+      "pr_auc_ci95": [
+        0.479087,
+        0.51408
+      ],
+      "false_positive_cost": {
+        "threshold": 0.6035219404714103,
+        "units": "IEEE-CIS amount units (consistent with USD)",
+        "review_cost_per_false_positive": 3.0079,
+        "flat_chargeback_fee_per_false_negative": 15.0395,
+        "false_positives": 163,
+        "false_negatives": 2297,
+        "false_positive_cost": 490.29,
+        "false_negative_cost": 416857.38,
+        "total_cost": 417347.67,
+        "unit": "transaction",
+        "cost_per_1000_transactions": 4711.4806,
+        "flagged": 949,
+        "flag_rate": 0.010713,
+        "assumptions": [
+          "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "notes": [
+        "Retained blocks: engineered, tier1.",
+        "Every selection was made on validation: the retained feature blocks on V-arb, the calibrator and both thresholds on V-late, the early-stopping round on V-fit. Test selected nothing. It was, however, read more than once and the honest phrasing is not 'scored exactly once': the isotonic baseline is a second scoring, the matched-flag-rate table is a third, and the run was repeated after a score-quantisation bug was found. That repeat moved the meta-learner by 0.00002 and corrected the baseline by 0.0074, i.e. it made the shipped result less flattering, not more."
+      ],
+      "calibration": {
+        "brier": 0.023298,
+        "expected_calibration_error": 0.003682,
+        "bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "count": 83918,
+            "mean_predicted": 0.014145,
+            "observed_frequency": 0.015122
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "count": 1674,
+            "mean_predicted": 0.154346,
+            "observed_frequency": 0.155317
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.30000000000000004,
+            "count": 1043,
+            "mean_predicted": 0.286715,
+            "observed_frequency": 0.321189
+          },
+          {
+            "bin_lower": 0.30000000000000004,
+            "bin_upper": 0.4,
+            "count": 349,
+            "mean_predicted": 0.364976,
+            "observed_frequency": 0.469914
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "count": 358,
+            "mean_predicted": 0.460366,
+            "observed_frequency": 0.430168
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6000000000000001,
+            "count": 290,
+            "mean_predicted": 0.581958,
+            "observed_frequency": 0.396552
+          },
+          {
+            "bin_lower": 0.6000000000000001,
+            "bin_upper": 0.7000000000000001,
+            "count": 170,
+            "mean_predicted": 0.633297,
+            "observed_frequency": 0.776471
+          },
+          {
+            "bin_lower": 0.7000000000000001,
+            "bin_upper": 0.8,
+            "count": 119,
+            "mean_predicted": 0.744843,
+            "observed_frequency": 0.537815
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "count": 14,
+            "mean_predicted": 0.827569,
+            "observed_frequency": 0.785714
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "count": 646,
+            "mean_predicted": 0.982816,
+            "observed_frequency": 0.896285
+          }
+        ]
+      },
+      "calibration_baseline_isotonic": {
+        "verdict": "Not shipped, and 'lost' overstates it. Isotonic is piecewise-constant, so it ties scores and moves PR-AUC by an artefact of step width; the sigmoid is strictly monotone and leaves the ranking exactly intact, which is why the sigmoid ships when PR-AUC is the headline. On calibration itself isotonic is the better of the two, and by how much is worth reading rather than waving at: compare the two ECE figures below. A large gap is not a free win for isotonic -- it is a signal worth investigating, because a correctly-fitted sigmoid on this data should be close.",
+        "isotonic": {
+          "pr_auc": 0.48235,
+          "brier": 0.022905,
+          "expected_calibration_error": 0.002178,
+          "distinct_scores": 25
+        },
+        "sigmoid": {
+          "pr_auc": 0.495416,
+          "brier": 0.023298,
+          "expected_calibration_error": 0.003682,
+          "distinct_scores": 105
+        }
+      },
+      "delta_vs_tier1_alone": {
+        "delta": -0.032157,
+        "interval": [
+          -0.037348,
+          -0.027291
+        ],
+        "verdict": "excludes zero"
+      },
+      "matched_flag_rate_comparison": {
+        "meta": {
+          "threshold": 0.6350712786655359,
+          "flag_rate": 0.009393,
+          "precision": 0.825721,
+          "recall": 0.222835,
+          "recall_by_value": 0.168862,
+          "caught_fraud_value": 79298.96,
+          "missed_fraud_value": 390309.57,
+          "confusion_matrix": {
+            "tn": 85353,
+            "fp": 145,
+            "fn": 2396,
+            "tp": 687
+          },
+          "cost_per_1000": 4817.97,
+          "note": "Matched-flag-rate view. BOTH cuts here are quantiles of the TEST score vectors -- that is what makes the flag rates comparable, and it is why this table selects nothing and is reported only after the shipped thresholds were fixed on validation. The shipped operating points are elsewhere in this entry."
+        },
+        "tier1": {
+          "threshold": 0.8060167425659784,
+          "flag_rate": 0.010002,
+          "precision": 0.86456,
+          "recall": 0.248459,
+          "recall_by_value": 0.150031,
+          "caught_fraud_value": 70455.93,
+          "missed_fraud_value": 399152.59,
+          "confusion_matrix": {
+            "tn": 85378,
+            "fp": 120,
+            "fn": 2317,
+            "tp": 766
+          },
+          "cost_per_1000": 4903.53,
+          "note": "Matched-flag-rate view. BOTH cuts here are quantiles of the TEST score vectors -- that is what makes the flag rates comparable, and it is why this table selects nothing and is reported only after the shipped thresholds were fixed on validation. The shipped operating points are elsewhere in this entry."
+        }
+      },
+      "ablation_validation": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.588497,
+          "engineered+tier1": 0.592407,
+          "base": 0.592407,
+          "tier1+tier2+tier3_served+tier3_topology": 0.583656,
+          "engineered+tier2+tier3_served+tier3_topology": 0.162246,
+          "engineered+tier1+tier3_served+tier3_topology": 0.586495,
+          "engineered+tier1+tier2": 0.593604,
+          "engineered+tier1+tier2+tier3_topology": 0.588566,
+          "engineered+tier1+tier3_served": 0.59316,
+          "engineered+tier1+tier2+tier3_served": 0.594564,
+          "engineered+tier1+tier3_topology": 0.587673
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.004841,
+            "interval": [
+              -0.004112,
+              0.013705
+            ],
+            "interval_width": 0.017817,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.426251,
+            "interval": [
+              0.396868,
+              0.453492
+            ],
+            "interval_width": 0.056624,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": 0.002002,
+            "interval": [
+              -0.001222,
+              0.004869
+            ],
+            "interval_width": 0.006091,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": 0.001198,
+            "interval": [
+              -0.001107,
+              0.003492
+            ],
+            "interval_width": 0.0046,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -6.9e-05,
+            "interval": [
+              -0.003017,
+              0.003192
+            ],
+            "interval_width": 0.006209,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.000754,
+            "interval": [
+              -0.003393,
+              0.005057
+            ],
+            "interval_width": 0.00845,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.006067,
+            "interval": [
+              -0.010014,
+              -0.002614
+            ],
+            "interval_width": 0.0074,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": -0.004734,
+            "interval": [
+              -0.010263,
+              0.000965
+            ],
+            "interval_width": 0.011228,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_served",
+            "retained": false,
+            "rationale": "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired -- leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1"
+        ]
+      },
+      "ablation_train_oof": {
+        "arbiter_rows": 31003,
+        "arbiter_positives": 1131,
+        "variant_pr_auc": {
+          "full": 0.577237,
+          "engineered+tier1": 0.575976,
+          "base": 0.575976,
+          "tier1+tier2+tier3_served+tier3_topology": 0.57348,
+          "engineered+tier2+tier3_served+tier3_topology": 0.201359,
+          "engineered+tier1+tier3_served+tier3_topology": 0.582263,
+          "engineered+tier1+tier2": 0.575021,
+          "engineered+tier1+tier2+tier3_topology": 0.580712,
+          "engineered+tier1+tier3_served": 0.589156,
+          "engineered+tier1+tier2+tier3_served": 0.583805,
+          "engineered+tier1+tier3_topology": 0.582335
+        },
+        "deltas": [
+          {
+            "block": "engineered",
+            "kind": "leave_one_out",
+            "delta": 0.003756,
+            "interval": [
+              -0.005502,
+              0.013569
+            ],
+            "interval_width": 0.019071,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier1",
+            "kind": "leave_one_out",
+            "delta": 0.375878,
+            "interval": [
+              0.348255,
+              0.403206
+            ],
+            "interval_width": 0.054951,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier2",
+            "kind": "leave_one_out",
+            "delta": -0.005027,
+            "interval": [
+              -0.008356,
+              -0.001406
+            ],
+            "interval_width": 0.00695,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier2",
+            "kind": "add_one",
+            "delta": -0.000954,
+            "interval": [
+              -0.003935,
+              0.00204
+            ],
+            "interval_width": 0.005976,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "leave_one_out",
+            "delta": -0.003476,
+            "interval": [
+              -0.006966,
+              -7.3e-05
+            ],
+            "interval_width": 0.006893,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_served",
+            "kind": "add_one",
+            "delta": 0.01318,
+            "interval": [
+              0.009118,
+              0.01748
+            ],
+            "interval_width": 0.008362,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": true
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "leave_one_out",
+            "delta": -0.006569,
+            "interval": [
+              -0.012674,
+              -0.000195
+            ],
+            "interval_width": 0.012479,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          },
+          {
+            "block": "tier3_topology",
+            "kind": "add_one",
+            "delta": 0.00636,
+            "interval": [
+              -0.000623,
+              0.012607
+            ],
+            "interval_width": 0.01323,
+            "rows": 31003,
+            "positives": 1131,
+            "excludes_zero_positively": false
+          }
+        ],
+        "verdicts": [
+          {
+            "block": "engineered",
+            "retained": true,
+            "rationale": "engineered: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier1",
+            "retained": true,
+            "rationale": "tier1: retained (base block, exempt from retirement)."
+          },
+          {
+            "block": "tier2",
+            "retained": false,
+            "rationale": "tier2: retired -- leave_one_out delta -0.0050, 95% CI [-0.0084, -0.0014], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          },
+          {
+            "block": "tier3_served",
+            "retained": true,
+            "rationale": "tier3_served: retained -- add_one delta +0.0132, 95% CI [+0.0091, +0.0175], lower bound above zero at n=31,003 (1,131 positives)."
+          },
+          {
+            "block": "tier3_topology",
+            "retained": false,
+            "rationale": "tier3_topology: retired -- leave_one_out delta -0.0066, 95% CI [-0.0127, -0.0002], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification."
+          }
+        ],
+        "retained_blocks": [
+          "engineered",
+          "tier1",
+          "tier3_served"
+        ]
+      },
+      "out_of_fold_handicap": [
+        {
+          "fold": 2,
+          "train_rows": 82675,
+          "train_positives": 2221,
+          "validation_pr_auc": 0.419987
+        },
+        {
+          "fold": 3,
+          "train_rows": 165351,
+          "train_positives": 4571,
+          "validation_pr_auc": 0.458702
+        },
+        {
+          "fold": 4,
+          "train_rows": 248026,
+          "train_positives": 8063,
+          "validation_pr_auc": 0.477637
+        },
+        {
+          "fold": 5,
+          "train_rows": 330702,
+          "train_positives": 11180,
+          "validation_pr_auc": 0.52016
+        },
+        {
+          "fold": "full",
+          "train_rows": 413378,
+          "train_positives": 14538,
+          "validation_pr_auc": 0.615475
+        }
+      ],
+      "validation_slices": [
+        {
+          "slice": "V-fit",
+          "rows": 35432,
+          "positives": 1231,
+          "base_rate": 0.034743,
+          "first_event": "2018-03-31 19:26:43+00:00",
+          "last_event": "2018-04-12 12:31:11+00:00"
+        },
+        {
+          "slice": "V-arb",
+          "rows": 31003,
+          "positives": 1131,
+          "base_rate": 0.03648,
+          "first_event": "2018-04-12 12:31:34+00:00",
+          "last_event": "2018-04-24 02:31:07+00:00"
+        },
+        {
+          "slice": "V-late",
+          "rows": 22146,
+          "positives": 680,
+          "base_rate": 0.030705,
+          "first_event": "2018-04-24 02:31:25+00:00",
+          "last_event": "2018-05-02 05:17:20+00:00"
+        }
+      ],
+      "tier2_memorisation": {
+        "included_clean_rows": 35899,
+        "excluded_clean_rows": 28569,
+        "fraud_rows": 5856,
+        "memorisation_auc": 0.950091,
+        "fraud_auc": 0.862818,
+        "residual_auc": 0.364853
+      },
+      "tier3_circularity": {
+        "note": "The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it.",
+        "main_abstention_rate": 0.717882,
+        "control_abstention_rate": 0.985378
+      },
+      "latency": {}
+    },
+    "baseline_comparison": [
+      {
+        "model": "Tier-1 alone (tier1-anomaly-lightgbm-ieee-cis-20260822t185154z)",
+        "split": "test",
+        "rows": 88581,
+        "positives": 3083,
+        "base_rate": 0.034804,
+        "threshold": 0.813709698322036,
+        "threshold_criterion": "flagging at most 1.0% of VALIDATION traffic, transferred to test unchanged -- the same discipline the meta-learner threshold is held to",
+        "pr_auc": 0.527572,
+        "pr_auc_no_skill_floor": 0.034804,
+        "lift_over_no_skill": 15.158,
+        "precision": 0.873418,
+        "recall": 0.246189,
+        "f1": 0.384109,
+        "confusion_matrix": {
+          "tn": 85388,
+          "fp": 110,
+          "fn": 2324,
+          "tp": 759
+        },
+        "pr_auc_ci95": [
+          0.511655,
+          0.546153
+        ],
+        "false_positive_cost": {
+          "threshold": 0.813709698322036,
+          "units": "IEEE-CIS amount units (consistent with USD)",
+          "review_cost_per_false_positive": 3.0079,
+          "flat_chargeback_fee_per_false_negative": 15.0395,
+          "false_positives": 110,
+          "false_negatives": 2324,
+          "false_positive_cost": 330.87,
+          "false_negative_cost": 435801.6,
+          "total_cost": 436132.47,
+          "unit": "transaction",
+          "cost_per_1000_transactions": 4923.5442,
+          "flagged": 869,
+          "flag_rate": 0.00981,
+          "assumptions": [
+            "A false positive costs 3.01 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+            "A false negative costs the transaction amount plus a flat 15.04 - the chargeback fee and internal handling on top of the value lost.",
+            "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+            "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+            "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+          ]
+        }
+      }
+    ],
+    "artifact": "artifacts\\meta-learner-xgboost-ieee-cis-20260824t145659z.json",
+    "notes": [
+      "Supersedes every earlier meta_learner entry: meta-learner-xgboost-ieee-cis-20260824t100225z (a calibrator fitted on the probability scale and applied to margins, so every probability and threshold in it is an artefact, uninterpretable calibration, a Tier-1 baseline thresholded on the test split, a quantisation-damaged Tier-1 baseline, a retirement sentence claiming an interval does not exclude zero when it excludes zero negatively); meta-learner-xgboost-ieee-cis-20260824t104214z (a calibrator fitted on the probability scale and applied to margins, so every probability and threshold in it is an artefact, uninterpretable calibration, a Tier-1 baseline thresholded on the test split, a retirement sentence claiming an interval does not exclude zero when it excludes zero negatively); meta-learner-xgboost-ieee-cis-20260824t133619z (a calibrator fitted on the probability scale and applied to margins, so every probability and threshold in it is an artefact, uninterpretable calibration, a retirement sentence claiming an interval does not exclude zero when it excludes zero negatively); meta-learner-xgboost-ieee-cis-20260824t141902z (a retirement sentence claiming an interval does not exclude zero when it excludes zero negatively). The registry is append-only, so those entries remain, carrying the defects they were produced with and no forward pointer of their own. Supersession can only be recorded forward, and this is that record. Treat any threshold-dependent figure in them as an artefact of the defect named beside it.",
+      "Headline against Tier-1 alone: -0.0322, 95% CI [-0.0373, -0.0273] -- the interval excludes zero.",
+      "Out-of-fold Tier-1: 5 forward-chaining blocks over the train split, block 1 dropped (no predecessor to score it), 1917 rounds per fold fixed from the registered model's best_iteration, each fold refitting its own input spec. Fold feature versions: ['fv_96aa13d9cceb', 'fv_f6f707927a5c', 'fv_63961b99aeab', 'fv_20845ba7bb4e'].",
+      "engineered: retained (base block, exempt from retirement).",
+      "tier1: retained (base block, exempt from retirement).",
+      "tier2: retired for want of evidence at n=31,003 (1,131 positives) -- best add_one delta +0.0012, 95% CI [-0.0011, +0.0035], width 0.0046. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_served: retired for want of evidence at n=31,003 (1,131 positives) -- best leave_one_out delta -0.0001, 95% CI [-0.0030, +0.0032], width 0.0062. The interval does not exclude zero, which is an absence of evidence that this layer helps, not evidence that it does not.",
+      "tier3_topology: retired -- leave_one_out delta -0.0061, 95% CI [-0.0100, -0.0026], which excludes zero on the NEGATIVE side at n=31,003 (1,131 positives). This block measurably degrades the model; removing it is an improvement, not merely a simplification.",
+      "Keep/drop was arbitrated on the V-arb validation slice, where no tier signal is in-sample. The train-fit column is reported alongside; the disagreement between the two is the measured size of Tier-2's train contamination.",
+      "Tier-2's latent size, window and early-stopping round were all selected on validation, so validation flatters Tier-2 relative to test. A drop verdict is therefore safe (it lost with a thumb on the scale); a keep verdict is suggestive rather than conclusive.",
+      "Tier-1's round count was early-stopped on the full validation split during Phase 2, so all three validation slices carry one Tier-1 hyperparameter tuned on them. It is one scalar over 88,581 rows and cannot be undone without retraining Tier-1.",
+      "tier3_topology is not obtainable from a Tier3Result today. If it was retained above, serving it is a Phase 7 requirement: Tier-3's persisted score table must carry a per-account feature vector.",
+      "Not fitted on PaySim. Its Tier-1 PR-AUC of 0.9999 is a simulator artefact (amount == oldbalanceOrg on 97.49% of fraud), it has no Tier-2 model, and Tier-3 abstains on 100% of its test transactions. See BUILD_LOG.md Phase 2 finding 3.",
+      "top_features is an evasion oracle: authenticated internal reviewers only, never returned to the transacting party.",
+      "Tier-2 memorisation diagnostic: {'included_clean_rows': 35899, 'excluded_clean_rows': 28569, 'fraud_rows': 5856, 'memorisation_auc': 0.950091, 'fraud_auc': 0.862818, 'residual_auc': 0.364853}.",
+      "Tier-3 circularity control: The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it."
+    ]
   }
 ]

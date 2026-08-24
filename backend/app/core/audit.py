@@ -45,6 +45,15 @@ class AuditRecord(BaseModel):
         "definition that produced this transaction's inputs.",
     )
 
+    top_features: tuple[tuple[str, float], ...] | None = Field(
+        default=None,
+        description="Top contributing features by absolute TreeSHAP value, from the Phase 5 "
+        "meta-learner. Recorded because the audit trail has to be able to answer *why* a "
+        "decision was made, not only what it was. An evasion oracle: this field is for the "
+        "audit store and internal reviewers, and must never be echoed to the transacting "
+        "party -- see the security checklist's model-exposure section.",
+    )
+
     degraded: bool = Field(
         default=False,
         description="True when a layer was skipped and the decision was made without it.",

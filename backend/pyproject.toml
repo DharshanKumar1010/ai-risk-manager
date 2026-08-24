@@ -58,7 +58,7 @@ ignore_missing_imports = true
 # kept narrow: model objects are held behind our own annotated wrappers (Tier1Model,
 # CostModel, EvaluationResult) rather than passed around raw.
 [[tool.mypy.overrides]]
-module = ["sklearn.*", "pyarrow.*", "joblib.*", "lightgbm.*", "shap.*"]
+module = ["sklearn.*", "pyarrow.*", "joblib.*", "lightgbm.*", "shap.*", "xgboost.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]

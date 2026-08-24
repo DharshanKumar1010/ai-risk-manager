@@ -18,8 +18,7 @@ redis>=5.2,<7.0
 pyjwt>=2.10,<3.0
 
 # --- Data and ML layer -------------------------------------------------------
-# Added in Phase 1 for the feature pipeline. The remaining per-tier model libraries
-# (xgboost, econml) arrive with their own phases — adding them now
+# Added in Phase 1 for the feature pipeline. econml arrives with Phase 6; adding it now
 # would inflate the image for code that does not exist yet.
 #
 # pandas 3.x is the current major: copy-on-write is enforced and string columns are
@@ -30,10 +29,15 @@ pandas>=3.0,<4.0
 pyarrow>=25.0,<27.0
 scikit-learn>=1.9,<2.0
 
-# Phase 2, Tier-1. LightGBM is the supervised half of the Tier-1 comparison; SHAP
-# supplies its local explanations, which Phase 5's meta-learner and Phase 8's dashboard
-# both read. SHAP is here rather than in Phase 5 because TreeExplainer over an
-# already-trained booster is a small addition and the audit trail wants it now.
+# Phase 2, Tier-1. LightGBM is the supervised half of the Tier-1 comparison.
+#
+# `shap` is declared but deliberately never imported. Both tree layers take TreeSHAP from
+# their own booster instead — LightGBM's `pred_contrib=True` (tier1_anomaly.explain) and
+# XGBoost's `pred_contribs=True` (meta_learner.contributions). Phase 5 verified the latter
+# is bit-identical to `shap.TreeExplainer.shap_values` (max abs diff 0.0) and that
+# `import shap` raises PendingDeprecationWarning from matplotlib at import time, which our
+# `filterwarnings = ["error"]` pytest config turns into a collection failure. Kept in the
+# manifest only so pip-audit tracks it; remove it in Phase 10 if nothing has imported it by then.
 lightgbm>=4.5,<5.0
 shap>=0.46,<1.0
 
@@ -62,6 +66,14 @@ matplotlib>=3.9,<4.0
 # there: under strict mode an untyped graph library makes every expression touching a node,
 # an edge or an attribute `Any`, and this is the layer where a leakage bug would hide.
 networkx>=3.4,<4.0
+
+# Phase 5, meta-learner. XGBoost over LightGBM for the fusion layer purely so the two tree
+# libraries stay distinguishable in the registry and in SHAP output — the meta-learner
+# consumes Tier-1's LightGBM score as a feature, and one library producing both would make a
+# stack trace ambiguous. `n_jobs` is pinned to 4 in XGBOOST_PARAMS for the same determinism
+# reason LightGBM's `num_threads` is: models/registry.json claims reproducibility for every
+# model in it. Ships no py.typed, so pyproject.toml's ignore_missing_imports list covers it.
+xgboost>=2.1,<4.0
 
 # --- Development and CI ------------------------------------------------------
 # Installed in the dev image and in CI. Phase 10 splits these out of the

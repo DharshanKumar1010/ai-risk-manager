@@ -12,7 +12,7 @@ solved read as more credible to a panel than a smoothed-over success narrative.
 | 2 — Tier-1 anomaly layer | **Complete, verified** | LightGBM selected over Isolation Forest on validation PR-AUC. IEEE-CIS held-out test **PR-AUC 0.5276** (95% CI 0.5117–0.5462) against a 0.0348 no-skill floor — 15.2x lift; 87% precision at a staffable 1%-flag operating point. Latency p50 5.62ms / p95 6.38ms, ~8x inside the 50ms budget. Detail below. | Catches 24.6% of fraud by count but only **14.6% by value** — recall falls as amount rises; PaySim's 0.9998 is a simulator artefact (`amount == oldbalanceOrg` on 97.5% of fraud, 0 of 412,277 legit rows) and must never be quoted as a headline, nor used to fit the Phase 5 meta-learner; no hyperparameter search run; feature-assembly latency still unmeasured (Phase 7) |
 | 3 — Tier-2 behavioural layer | **Complete, verified** | PyTorch LSTM autoencoder over per-account trailing windows, IEEE-CIS only. Evaluated **per account**, not per transaction. Detail below. | Loses the head-to-head against Tier-1-aggregated; earns its place only as a Phase 5 fusion input, not standalone. Two registry entries answer to this architecture with identical PR-AUC and feature_version but p99 5.76ms against 45.18ms — read `...070529z`, and re-benchmark in Phase 10. Full gap list in the Phase 3 detail section |
 | 4 — Tier-3 graph layer | **Complete, verified** | One Louvain + centrality algorithm over two real graphs. **IEEE-CIS ring-level test PR-AUC 0.6462** (95% CI 0.5703–0.7214) against a 0.1076 base rate — **6.01x lift** on 1,329 rings, corroborated by an independent enrichment check at 6.20x. PaySim ring-level 0.9977 against a 0.8369 base rate — a **1.19x lift, which is close to nothing**, on a corpus whose chain structure is a simulator artefact. Serving is a dictionary lookup, p99 0.003ms. Detail below. | **Tier-3 earns its place on IEEE-CIS and not on PaySim.** `tier3_ring_risk_score` is **not** a proven Phase 5 input — per-transaction PR-AUC is *below* no-skill (0.902x) and Tier-1 fusion is significantly negative (−0.0031, CI [−0.0038, −0.0026]). Operating-point recall 0.112 (IEEE-CIS) / 0.006 (PaySim). Ring metrics exclude rings repeating an earlier one, so they say nothing about persistent rings. Most IEEE-CIS signal is circular with the constructed UID. Full gap list in the Phase 4 detail section |
-| 5 — Meta-learner + SHAP | Not started | | |
+| 5 — Meta-learner + SHAP | **Complete, negative result** | XGBoost fusion over out-of-fold Tier-1 + engineered features, Platt-calibrated, TreeSHAP attribution. Held-out test **PR-AUC 0.4954** (95% CI 0.4791-0.5141) against Tier-1 alone at **0.5276** — paired delta **-0.0322, 95% CI [-0.0373, -0.0273], excluding zero on the negative side**. The ablation retired **all three tier layers**; `tier3_topology` was measurably harmful. Well calibrated (ECE 0.0037). **Gate status: three ml-evaluator rounds returned 6, then 4, then 3 blocking findings; all were fixed and each fix verified directly, but the confirming fourth round did not complete, so the phase is NOT recorded as gate-cleared.** Detail below. | **Tier-1 wins the headline metric; do not ship the meta-learner on PR-AUC.** But at a matched 1% flag rate the fusion is *cheaper* (4,818 vs 4,904 per 1,000) because it catches more fraud **by value** (16.9% vs 15.0%) while catching less by count — a point estimate with no CI, flagged for Phase 6 rather than acted on. The loss is **confounded**: the out-of-fold handicap is real (fold PR-AUC 0.4200-0.5202 against full-train 0.6155) but the shipped booster also early-stopped at **iteration 2**, and the discriminating diagnostic was not run. |
 | 6 — Causal cost layer | Not started | | |
 | 7 — Backend, audit, security | Not started | | |
 | 8 — React dashboard | Not started | | |
@@ -98,6 +98,13 @@ which puts CRLF into Linux containers where a CRLF entrypoint fails with an opaq
 **Ruff `B008` on FastAPI's `Depends` default.** Resolved with the modern
 `Annotated[..., Depends(...)]` form rather than adding `extend-immutable-calls` to suppress
 the rule — the lint stays honest for Phase 7's routers.
+
+### Reproducibility, checked rather than assumed
+
+The final two runs produced byte-identical headline numbers — PR-AUC 0.495416, delta -0.032157,
+ECE 0.003682 — across a code change that touched provenance and report text but not the model
+path. Seed 42 and `nthread=4` are pinned for exactly this reason. A run that failed to reproduce
+here would itself have been a finding.
 
 ### Known gaps leaving Phase 0
 
@@ -865,3 +872,299 @@ suite, which stayed green throughout.
 - **The PaySim `heldout_test` has no top-level `pr_auc`**, only the nested `ring_level` block,
   because the ring is its unit. Any consumer indexing `entry["heldout_test"]["pr_auc"]` must
   handle that.
+
+
+## Phase 4 — Tier-3 Ring Detection
+
+**Status:** Complete (with documented limitations)
+
+**Results:**
+- IEEE-CIS ring-level PR-AUC 0.6462 (95% CI 0.5703-0.7214), 6.01x lift over the 0.1076 ring
+  base rate, precision 0.8889/recall 0.1119 at the 1% review-capacity cap, on 1,329 test rings
+- PaySim ring-level PR-AUC 0.9977 (1.19x lift over a 0.8369 base rate, simulator/pairing-rule artifact)
+- Per-transaction scalar projection: 0.0314 vs 0.0348 floor (below no-skill)
+- Fusion with Tier-1: delta -0.0031 (CI excludes zero, significantly negative)
+
+**Known Confounds & Limitations:**
+- B1: `add_surrogate_recovery` selects on test split for F1 sweep — not caught by test suite
+- B2: Constant-ranker interval derivation: pairing doesn't avoid base-rate shifting as claimed
+- B5: Circularity evidence confounded by mismatched entity_cap (main 200 vs control 50) and base rates
+- PaySim result carries DO-NOT-QUOTE caveat (simulator artifact, not generalizable)
+- **Corrected 2026-08-24 (Phase 5 pre-flight):** this block previously reported the IEEE-CIS
+  ring result as 0.8378 (3.67x). That pair belongs to the superseded runs `...20260823t171430z`
+  and `...20260823t182232z` (ring base rate 0.2285 over 3,488 rings) and was never refreshed
+  after the final run. The authoritative entry is `tier3-graph-louvain-ieee-cis-20260824t030009z`,
+  which agrees with the narrative section above and with `notebooks/tier3_report.md:163`.
+  Ring counts fell 4,443 -> 3,488 -> 1,329 across runs as ring de-duplication tightened.
+
+**For Phase 5:**
+- Use ring-level features (from `ring_membership`, `entity_involvement`), NOT the per-transaction `ring_risk_score` scalar
+- Tier-3 will likely not survive fusion; expect meta-learner to drop it
+- IEEE-CIS signal is partially UID-circular (non-circular control at matched cap: 0.3054 vs 0.2181)
+
+**Recommendation:** Tier-1 carries the system. Proceed to Phase 5 meta-learner expecting Tiers 2-3 to add minimal value. This is an honest finding, not a failure.
+
+
+## Phase 5 — Meta-Learner + SHAP
+
+**Status:** Complete. **The headline is a negative result on the project's headline metric, and
+it is reported as one.** The `ml-evaluator` gate ran three times, returning 6 blocking findings, then 4, then 3. Every
+round is recorded below rather than quietly absorbed, because several findings were real bugs
+already published with a confident wrong explanation attached — and two of them were *introduced
+by the fix for an earlier round*, which is the most useful thing this phase learned about its own
+process.
+
+**The gate is not recorded as cleared.** All three round-3 findings were fixed and each fix was
+verified directly — the Tier-1 hash now resolves to the registered `fv_c1d8eb96f693`, the report
+strings are corrected at their source in `render_report`, and the supersession note is derived from
+each superseded entry's own contents. But the confirming fourth round did not complete, so nobody
+has audited the current state end to end. Given that two of the last three findings were introduced
+by fixes to earlier findings, self-verification is not a substitute here: **Phase 6 should re-run
+`ml-evaluator` against this phase before relying on any number in it.**
+
+### The result
+
+| model | held-out test PR-AUC | 95% CI |
+|---|---|---|
+| Tier-1 alone (`tier1-anomaly-lightgbm-ieee-cis-20260822t185154z`) | **0.5276** | 0.5117-0.5462 |
+| Meta-learner (`meta-learner-xgboost-ieee-cis-20260824t145659z`) | **0.4954** | 0.4791-0.5141 |
+
+Paired delta **-0.0322, 95% CI [-0.0373, -0.0273]** on n=88,581 / 3,083 positives. The interval
+excludes zero **on the negative side**: on PR-AUC, fusing the layers is measurably worse than
+Tier-1 alone. Shipped operating point (threshold 0.6035, cost-chosen on V-late under a 1% capacity
+cap, realising 1.07% on test): precision 0.8282, recall 0.2549, F1 0.3899, confusion
+TN 85,335 / FP 163 / FN 2,297 / TP 786, estimated cost 4,711 per 1,000 transactions.
+
+**The cost comparison does not agree with the ranking comparison,** and the standards require the
+recommendation to be justified by cost rather than by a rank metric alone. At a matched 1% flag
+rate — both cuts taken as quantiles of the **test** score vectors, which is what makes the flag
+rates comparable, and computed only after the shipped thresholds were fixed on validation:
+
+| model | flag rate | precision | recall (count) | recall (**value**) | cost per 1,000 |
+|---|---:|---:|---:|---:|---:|
+| meta-learner | 0.94% | 0.8257 | 0.2228 | **0.1689** | **4,817.97** |
+| Tier-1 alone | 1.00% | 0.8646 | 0.2485 | 0.1500 | 4,903.53 |
+
+The fusion catches **less fraud by count and more by value**, so under the project's cost model it
+is cheaper by roughly 86 per 1,000 transactions — about 1.7%. That speaks directly to the gap
+Phase 2 flagged as "the concrete opening for Phase 6's causal cost layer" (Tier-1 catching 24.6%
+by count against 14.6% by value).
+
+**Recommendation for Phase 6: consume Tier-1's score, and treat the meta-learner as an open
+question rather than a closed one.** Tier-1 wins decisively on the headline metric. The cost
+advantage runs the other way but is small, is a bare point estimate with **no confidence
+interval** — this project has `bootstrap_pr_auc_delta` but no equivalent for a cost or
+value-recall difference — rests on the cost model's stated assumptions, and turns on 1.9
+percentage points of value recall on a quantity dominated by a handful of large transactions. Not
+enough to ship on, too specific to discard.
+
+### The ablation — the question Phases 3 and 4 deferred here
+
+Fitted on V-fit, arbitrated on V-arb (31,003 rows, 1,131 positives), paired bootstrap, keep only
+on a strictly-positive lower bound:
+
+| block | leave-one-out | add-one | verdict |
+|---|---|---|---|
+| tier1 | **+0.4263** [+0.3969, +0.4535] | — (exempt) | retained — Tier-1 *is* the system |
+| engineered | +0.0048 [-0.0041, +0.0137] | — (exempt) | retained by exemption; no evidence it adds over Tier-1 |
+| tier2 | +0.0020 [-0.0012, +0.0049] | +0.0012 [-0.0011, +0.0035] | **retired** |
+| tier3_served | -0.0001 [-0.0030, +0.0032] | +0.0008 [-0.0034, +0.0051] | **retired** |
+| tier3_topology | **-0.0061 [-0.0100, -0.0026]** | -0.0047 [-0.0103, +0.0010] | **retired — measurably harmful** |
+
+Retirements are worded as *"retired for want of evidence at n=31,003"*, not as "measured to add
+nothing" — at this sample size most of these intervals are ties, and the difference between "we
+could not detect an effect" and "there is no effect" is the difference between an honest claim and
+a false one. `tier3_topology` is the exception and is worded differently: its leave-one-out
+interval lies entirely below zero, so removing it is an improvement, not a simplification.
+
+`tier1`'s +0.4263 is the most important number in the phase. The fusion layer's entire predictive
+content is Tier-1's score, and the engineered passthrough adds nothing detectable on top — expected,
+since Tier-1's LightGBM was already fitted on a superset of exactly those 23 features.
+
+### Why it loses: two candidate causes, only one of them ruled in
+
+**The out-of-fold handicap, measured.** Stacking needs out-of-sample inputs, so Tier-1 was
+re-scored with forward-chaining folds (5 blocks, block 1 dropped, per-fold input-spec refit, 1,917
+rounds fixed from the registered `best_iteration`):
+
+| fold | train rows | train positives | validation PR-AUC |
+|---|---:|---:|---:|
+| 2 | 82,675 | 2,221 | 0.4200 |
+| 3 | 165,351 | 4,571 | 0.4587 |
+| 4 | 248,026 | 8,063 | 0.4776 |
+| 5 | 330,702 | 11,180 | 0.5202 |
+| **full-train (what serves)** | **413,378** | **14,538** | **0.6155** |
+
+The meta-learner was fitted against a `tier1_score` column worth 0.42-0.52 and applied to one worth
+0.6155. The fold-5-to-full-train jump is far larger than 25% more data explains — the full-train
+window ends immediately before validation, so **recency**, not volume, does the work.
+
+**The second cause, which the first write-up missed entirely: the model barely fitted.** Early
+stopping selected **iteration 2**; the shipped model is three trees. That is consistent with the
+ablation — there is almost nothing to learn beyond `tier1_score` — but it means the loss is
+**confounded** between the handicap and simply not fitting, and this phase did not separate them.
+The discriminating diagnostic (refit on the in-sample Tier-1 column, compare on the arbiter) was
+not run. An earlier draft claimed this was "a structural limit, not a tuning problem"; that was
+asserted rather than demonstrated and has been withdrawn.
+
+### Calibration
+
+Platt scaling on the margin, two floats, plain JSON. **Test Brier 0.0233, ECE 0.0037** against a
+3.4804% base rate, across 10 populated bins — 83,918 rows predicted 0.0141 against 0.0151 observed,
+1,674 rows predicted 0.1543 against 0.1553. Probabilities span 0.0093 to 0.9972 with a median clean
+row at 0.0099. These are usable as probabilities, not merely as a ranking.
+
+Isotonic remains the documented alternative at ECE 0.0022 — 1.7x better, the small gap expected
+between a flexible calibrator and a two-parameter one. The sigmoid ships because it is strictly
+monotone and leaves PR-AUC exactly intact, while isotonic ties scores and moves the headline metric
+by an artefact of step width.
+
+That 1.7x is worth contrasting with what an earlier run reported: **16x**, alongside ECE 0.0348 and
+a review threshold of 3e-106. That was not a property of the data. It was a bug — see obstacles.
+
+### Tier-2 contamination: predicted, measured, and severe
+
+Tier-2's autoencoder fits on fraud-free train windows excluded **by account**, so on train every
+fraud row belongs to a wholly-withheld account while most clean rows do not. The control group
+holds the label constant and varies only fit membership. Across 35,899 included and 28,569 excluded
+clean rows and 5,856 fraud rows:
+
+- **memorisation AUC 0.9501** (0.5 = no effect). Fit membership alone almost perfectly separates
+  the reconstruction error.
+- naive train fraud/clean gap: AUC 0.8628.
+- **residual AUC 0.3649** — with fit membership held constant, Tier-2 scores fraud as *less*
+  anomalous than clean traffic. Its train-split signal is not weak; it is **inverted**, and the
+  apparent discrimination is the autoencoder recognising rows it was fitted on.
+
+Arbitrated on validation, where no tier is in-sample. Both columns agree Tier-2 does not clear the
+bar: arbiter leave-one-out +0.0020 [-0.0012, +0.0049], train-fit leave-one-out
+-0.0047 [-0.0080, -0.0011].
+
+### The explanation smoke test — read, not just executed
+
+Ten test transactions (five highest-risk, five random), attributions read:
+
+- **`tier1_score` is the top contributor in all ten**, an order of magnitude above everything else.
+  All five top-risk rows are genuinely fraud and correctly blocked, and the secondary features are
+  plausible — but every explanation reduces to "Tier-1 said so", which sends a reviewer back to
+  `tier1_anomaly.explain`. A fusion layer whose attribution restates one input is not explaining a
+  fusion.
+
+It also caught a serving bug before it shipped: `build_vector` rejected a *null* engineered feature
+as an error, but `seconds_since_prior_txn` is legitimately null on an account's first transaction
+and the training matrix carried such values through as NaN. Refusing them would have made the layer
+unable to score any account's first transaction. Now a null becomes NaN while an absent key still
+raises, with a paired test for each.
+
+### Obstacles
+
+The two worst were both **bugs that shipped with a confident wrong explanation attached**, which is
+the pattern most worth recording.
+
+- **The Platt calibrator was fitted on one scale and applied to another.**
+  `CalibratedClassifierCV` prefers `decision_function` and falls back to `predict_proba`; the
+  booster wrapper exposed only the latter, so `(a, b)` were fitted against values in [0,1] while
+  `score_frame` applied them to log-odds. The sigmoid was then evaluated far outside its fitted
+  range and every probability collapsed toward zero: slope **-97.5** where a margin-scale fit gives
+  order 1, review threshold 3e-106, ECE 0.0348 (exactly the base rate), all 88,581 rows in a single
+  calibration bin. **All of that had been written up as "three trees compress the margins"** — a
+  symptom explained instead of a cause diagnosed, and the 16x isotonic gap that should have been
+  the tell was reported as a curiosity. Fixed by adding `decision_function`; ECE went 0.0348 →
+  0.0037 and the threshold 3e-106 → 0.6035. PR-AUC and the delta did not move, because the map is
+  monotone either way.
+- **Early stopping selected an iteration count that scoring then ignored.** `Booster.predict()`
+  uses every tree unless given an `iteration_range`, so the model was scored 100 rounds past its own
+  validation-selected optimum, and a reloaded artefact honouring `best_iteration` would not have
+  reproduced the registered metrics. Fixed by pinning the range through margins, contributions,
+  calibration and the sidecar. Correcting it *improved* test PR-AUC (0.4937 → 0.4954).
+- **The Tier-1 baseline's threshold was chosen on the test split** — `np.quantile(tier1_test, 0.99)`
+  — while `EvaluationResult.render` printed "chosen on validation", so the artefact contradicted
+  itself. It handed Tier-1 the test flag rate while the meta-learner transferred its threshold blind
+  from V-late; precision falls with flag rate, so the comparison flattered whichever model was
+  allowed to peek. Fixed: the baseline threshold now comes from validation and lands at 0.813710,
+  byte-identical to Phase 2's registered capacity point. PR-AUC is threshold-free so the delta was
+  never affected; every threshold-dependent baseline figure in the first write-up was.
+- **The retirement sentence was hardcoded.** Every non-retained block was described as "the interval
+  does not exclude zero" — false for `tier3_topology` at [-0.0100, -0.0026]. The report and registry
+  asserted a falsehood about their own numbers, and *under*-claimed. It did not exist in the previous
+  run, where that interval straddled zero, which is exactly why no test caught it.
+- **The mandatory false-positive cost was computed for the meta-learner but not the baseline**, so
+  the ship/no-ship recommendation rested on PR-AUC alone. Adding it reversed part of the conclusion.
+- **A quantisation bug that cost 0.0073 PR-AUC.** The map making Tier-1's serving scores
+  commensurable with out-of-fold ranks used `searchsorted` bucketing, collapsing 88,069 distinct test
+  scores onto 1,024 grid points — damaging the meta-learner's strongest feature and depressing the
+  baseline to 0.5202. Caught by noticing the baseline disagreed with Phase 2's published figure.
+  Fixed by linear interpolation.
+- **The deny-list guard could not see the column it most needed to catch.** It compared *prefixed*
+  Tier-3 names against an *unprefixed* deny list, so `tier3_account_is_fraudulent` — a direct label
+  read — would have passed every guard and every test. The `TIER3_CARRIED_COLUMNS` allowlist was the
+  only real defence. Fixed to strip the prefix, with a test planting the prefixed name.
+- **A value-recall column reversed the recommendation and was produced by nothing.** It had been
+  computed in an ad-hoc shell session and pasted into two documents. It is now emitted by the run.
+- **`CalibratedClassifierCV(cv="prefit")` was removed in scikit-learn 1.9.** The working path is
+  `FrozenEstimator`, which needs the wrapped booster to satisfy `check_is_fitted` — supplied via
+  `__sklearn_is_fitted__`.
+- **`import shap` fails this repo's test suite** (PendingDeprecationWarning from matplotlib under
+  `filterwarnings = ["error"]`). XGBoost's native `pred_contribs=True` is the same TreeSHAP
+  algorithm, verified bit-identical (max abs diff 0.0). `shap` is declared but imported nowhere, and
+  a test pins that.
+- **A provenance fix that made provenance worse.** Round 2 asked for Tier-1's `feature_version`
+  to be recorded. `load_registered_tier1` rebuilds the spec from the sidecar with `dropped=()`,
+  but `dropped` is hashed into the feature version, so the recorded hash resolved to nothing in
+  the registry — a traceability chain that looked intact and was not, which is worse than the
+  omission it replaced. Fixed by reconstructing `DroppedColumn` from its string form and asserting
+  the rebuilt hash equals the registered one, raising rather than writing an unresolvable value.
+  It now reads `fv_c1d8eb96f693`, matching Tier-1's entry.
+- **A string patch that shipped garbled prose into the metrics report**, and a stale sentence
+  describing the calibrated probability scale that was left behind by the calibration fix — so the
+  authoritative report still told a reader the model emitted collapsed probabilities after it had
+  stopped doing so. Both corrected in `render_report` rather than in the generated file, so they
+  cannot regress on the next run.
+- **The supersession note listed defects from a hardcoded literal.** It named three defects by hand
+  and omitted the calibration bug that produced the very entry it was superseding — whose cost
+  figure is 6.5% *more* flattering than the corrected one, sitting unmarked in an append-only
+  record. The note is now derived from each superseded entry's own contents.
+- **Tier-3's fitted ring scorer is not serialised**, so Phase 5 refits it from rolling snapshots. The
+  saved artefact could not have been used anyway: its score table is a single snapshot ending
+  2018-06-02, *after* the test period.
+
+### Test discipline, stated plainly
+
+Every selection was made on validation: retained blocks on V-arb, calibrator and both thresholds on
+V-late, the early-stopping round on V-fit. **Test selected nothing.** It was not, however, "scored
+exactly once", and an earlier draft said so incorrectly. Test was read by the isotonic baseline, by
+the matched-flag-rate table, and across four runs — the quantisation fix and two rounds of gate
+fixes. The quantisation re-run moved the meta-learner by 0.00002 and corrected the baseline by
+0.0074, making the shipped result *less* flattering. Every superseded registry entry is named by the
+current one, generated from the registry rather than hardcoded.
+
+### Known gaps
+
+- **The loss is confounded** between the out-of-fold handicap and `best_iteration=2`. The
+  discriminating diagnostic was not run.
+- **The cost advantage has no confidence interval.** There is no bootstrap for a cost or
+  value-recall difference in this project.
+- **Tier-3's ring scorer is in-sample on train**, with no out-of-fold remedy — the likely reason the
+  train-fitted column rates Tier-3 differently from the arbiter. It does not reach the shipped model,
+  which retains no Tier-3 column.
+- The two ablation columns differ in **fit size as well as contamination** (330,703 rows against
+  35,432), so their disagreement is not cleanly attributable to either.
+- **`rank_normalise` ranks within the scored block**, so a train row's feature depends on later rows
+  in the same block. It is a non-causal transform and a train/serve construction mismatch against the
+  CDF map used at test. Conservative in direction — it can only degrade the fit, not inflate the
+  held-out number — but unquantified.
+- **No test asserts** that the refit ring scorer reproduces the registered Phase 4 score table.
+- **No false-negative profiling code for this layer**, unlike Tiers 2 and 3. The observed-failure
+  analysis in `app/models/README.md` was computed by hand and does not regenerate.
+- Per-fold Tier-2 refits would remove the eligibility artefact properly. Estimated 30 epochs x 4
+  folds on CPU; deferred.
+- Tier-1's round count was early-stopped on the full validation split in Phase 2, so all three
+  validation slices carry one Tier-1 hyperparameter tuned on them.
+- **Latency was never benchmarked.** `benchmark_latency` exists and is unused; the registry entry
+  carries an empty `latency` block. Phase 10 must fill it.
+- **`EvaluationResult.render` hardcodes "(chosen on validation by ...)"** for every caller and formats
+  thresholds at `%.6f`. The first made the baseline criterion self-contradicting; the second renders
+  small thresholds as `0.000000`. Both are latent traps for Phase 6.
+- Phase 7 must honour four carried security gates: routes need auth; the `audit_log` table needs RLS
+  forced and a `top_features` column; a Redis limiter must fail closed; and `POST /score` must **not**
+  return `top_features` — `MetaResult.public()` exists for exactly that.
