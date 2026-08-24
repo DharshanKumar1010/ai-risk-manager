@@ -10,8 +10,8 @@ solved read as more credible to a panel than a smoothed-over success narrative.
 | 0 — Scaffolding & environment | **Complete, verified** | Monorepo, `.claude/` skills + agents, CI workflow, 4-service Docker stack booting healthy. All six verification items passed. Detail below. | Dependency ranges not yet exact-pinned; CI never executed on GitHub; audit writer raises by design until Phase 7 |
 | 1 — Data pipeline & features | **Complete, verified** | Full pipeline runs end to end over both corpora: 590,540 IEEE-CIS + 2,770,409 PaySim rows engineered, split chronologically, and persisted to Postgres and parquet. 157 tests green including a hard leakage check. Detail below. | RLS defined but **not yet effective** (app still connects as superuser — Phase 7); IEEE-CIS `V1`-`V339` carried to parquet but not yet reduced or used (Phase 2); PaySim class balance is non-stationary and name-chaining is measured at 0% — both constrain Phase 4 |
 | 2 — Tier-1 anomaly layer | **Complete, verified** | LightGBM selected over Isolation Forest on validation PR-AUC. IEEE-CIS held-out test **PR-AUC 0.5276** (95% CI 0.5117–0.5462) against a 0.0348 no-skill floor — 15.2x lift; 87% precision at a staffable 1%-flag operating point. Latency p50 5.62ms / p95 6.38ms, ~8x inside the 50ms budget. Detail below. | Catches 24.6% of fraud by count but only **14.6% by value** — recall falls as amount rises; PaySim's 0.9998 is a simulator artefact (`amount == oldbalanceOrg` on 97.5% of fraud, 0 of 412,277 legit rows) and must never be quoted as a headline, nor used to fit the Phase 5 meta-learner; no hyperparameter search run; feature-assembly latency still unmeasured (Phase 7) |
-| 3 — Tier-2 behavioural layer | **Complete, verified** | PyTorch LSTM autoencoder over per-account trailing windows, IEEE-CIS only. Evaluated **per account**, not per transaction. Detail below. | Loses the head-to-head against Tier-1-aggregated; earns its place only as a Phase 5 fusion input, not standalone. Full gap list in the Phase 3 detail section |
-| 4 — Tier-3 graph layer | Not started | | |
+| 3 — Tier-2 behavioural layer | **Complete, verified** | PyTorch LSTM autoencoder over per-account trailing windows, IEEE-CIS only. Evaluated **per account**, not per transaction. Detail below. | Loses the head-to-head against Tier-1-aggregated; earns its place only as a Phase 5 fusion input, not standalone. Two registry entries answer to this architecture with identical PR-AUC and feature_version but p99 5.76ms against 45.18ms — read `...070529z`, and re-benchmark in Phase 10. Full gap list in the Phase 3 detail section |
+| 4 — Tier-3 graph layer | **Complete, verified** | One Louvain + centrality algorithm over two real graphs. **IEEE-CIS ring-level test PR-AUC 0.6462** (95% CI 0.5703–0.7214) against a 0.1076 base rate — **6.01x lift** on 1,329 rings, corroborated by an independent enrichment check at 6.20x. PaySim ring-level 0.9977 against a 0.8369 base rate — a **1.19x lift, which is close to nothing**, on a corpus whose chain structure is a simulator artefact. Serving is a dictionary lookup, p99 0.003ms. Detail below. | **Tier-3 earns its place on IEEE-CIS and not on PaySim.** `tier3_ring_risk_score` is **not** a proven Phase 5 input — per-transaction PR-AUC is *below* no-skill (0.902x) and Tier-1 fusion is significantly negative (−0.0031, CI [−0.0038, −0.0026]). Operating-point recall 0.112 (IEEE-CIS) / 0.006 (PaySim). Ring metrics exclude rings repeating an earlier one, so they say nothing about persistent rings. Most IEEE-CIS signal is circular with the constructed UID. Full gap list in the Phase 4 detail section |
 | 5 — Meta-learner + SHAP | Not started | | |
 | 6 — Causal cost layer | Not started | | |
 | 7 — Backend, audit, security | Not started | | |
@@ -121,7 +121,7 @@ the rule — the lint stays honest for Phase 7's routers.
 
 ---
 
-## Phase 1 — detail (in progress)
+## Phase 1 — detail
 
 **The reconciliation problem.** No single public dataset has both rich transaction/identity
 features and account-to-account network structure, so the project uses two: IEEE-CIS as the
@@ -533,3 +533,335 @@ the deployable number lives: **precision 0.8734 at a 0.98% flag rate**.
   recorded a PR-AUC of 0.9999 with no warning attached, so anyone reading `registry.json`
   alone would have taken it at face value. Any leak-suspicious result from any tier now
   carries that caveat into the permanent record rather than only into a log line.
+
+## Phase 3 — Tier-2 behavioural sequence layer
+
+Backfilled during Phase 4. The Phase 3 row in the status table above pointed at "Detail below"
+and at a "Phase 3 detail section" that was never written — the file ended inside Phase 2's
+known gaps. The numbers here come from `notebooks/tier2_report.md` and the two Tier-2 entries
+in `models/registry.json`, which were written at the time; only the narrative was missing.
+
+**Verified end state.** `python -m app.models.train_tier2` trains a PyTorch LSTM autoencoder
+over per-account trailing windows on IEEE-CIS, sweeping latent size, window length and the
+abstention threshold on validation and scoring the held-out test split exactly once. Selected
+model: **latent=8, W=15, test PR-AUC 0.0952** (95% CI 0.0801–0.1154) as the deployed system
+over all 43,530 test accounts, and **0.2932** (95% CI 0.2491–0.3488) over the 5,825 accounts
+it has enough history to score. Seed 42, CPU only — cuDNN's LSTM kernel is
+non-deterministic and would falsify the reproducibility claim every registry entry makes.
+
+**Two Tier-2 entries answer to the same architecture, and the later one is six times slower.**
+`...w15-latent8-ieee-cis-20260823t070529z` and `...20260823t083445z` carry identical PR-AUC
+(0.09522) and an identical `feature_version` (`fv_da07bc36e0da`) — the same model, benchmarked
+twice — but latency p95 moved from **5.56ms to 32.47ms** and p99 from 5.76ms to **45.18ms**
+against a 50ms budget, and `notebooks/tier2_report.md` reflects the slower run. Nothing about
+the model changed. The benchmark is wall-clock on one machine and the later run was taken while
+the Phase 4 graph builds were saturating the CPU, so this is an environment artefact rather
+than a regression in the layer — but a p99 within 10% of the budget is exactly the number a
+later phase must not meet by surprise, so it is recorded rather than quietly overwritten.
+**Phase 5 and Phase 7 should read the `...070529z` figures**, and Phase 10 must re-benchmark
+on an idle machine before any of this is quoted as a serving guarantee.
+
+### Three measured findings that change later phases
+
+**1. Tier-2 loses the head-to-head against Tier-1 and still earns its place.** PR-AUC delta
+against Tier-1 aggregated to the account level: **95% CI [-0.5110, -0.4527]** — decisively
+negative. That is the finding, and it was not a surprise: Tier-1 is supervised on the label
+and Tier-2 is one-class, so the head-to-head was always the wrong question. The right one is
+what Tier-2 adds *among the accounts Tier-1 has already cleared*. Spearman correlation between
+the two layers' account scores is **-0.0406** — near zero, which is the precondition for
+fusion adding anything at all. Among the 43,094 test accounts Tier-1 leaves below its own
+capacity threshold, 691 are fraudulent (1.60%), and Tier-2 ranks that residual at PR-AUC
+**0.0242** against a 0.0160 floor — **1.5x lift on fraud a Tier-1-only system would never have
+looked at.** That residual lift is what Phase 5 inherits. It is a narrower claim than the
+phase brief implies and it is the one the measurements support.
+
+**2. The evaluation unit had to change, and saying so is the result.** IEEE-CIS propagates a
+chargeback label across an account's later transactions, so one compromised account holding
+300 rows contributes 300 correlated positives. A per-transaction PR-AUC counts those as 300
+independent correct calls when the model made one, and the bootstrap has the same problem in
+reverse — resampling rows as if independent produces an interval far tighter than the evidence
+supports. Tier-2 is therefore evaluated **per account, not per transaction**, declared in the
+report and recorded in the registry note. Phase 4 hit the same class of problem from the
+opposite direction and made the same move: see the Phase 4 section below.
+
+**3. Coverage is the gap, not the accuracy.** Tier-2 can score only **13.4% of test accounts**
+(5,825 of 43,530), 28.8% of test transactions and **49.1% of test fraud transactions**, because
+Phase 1 measured 57.7% of IEEE-CIS accounts holding a single transaction. The rest abstain
+rather than returning a zero. The deployed headline of 0.0952 is computed with all 37,705
+abstentions counted as never flagged, which is why it sits so far below the model's own 0.2932
+over what it can actually see. Both are reported, both are labelled, and the deployed one is
+the headline.
+
+### Obstacles hit and how they were solved
+
+**The headline confusion matrix is degenerate, and it is recorded that way.** At the
+cost-minimising threshold the deployed system flags every account: TN 0, FP 42,457, FN 0,
+TP 1,073 — precision equal to the base rate, recall 1.0. That is what unbounded review
+capacity buys under this cost model, and rather than quietly reporting a nicer operating
+point instead, the registry entry opens with `THE HEADLINE CONFUSION MATRIX IS DEGENERATE` and
+a capacity-constrained operating point is reported alongside it. The cost model's own
+assumption list now names unbounded review capacity as the assumption that bites hardest.
+
+**A wide-enough autoencoder learns the identity map.** With ~21 features over 15 timesteps the
+input is ~315 dimensions, so a 128-unit hidden state is not on its own a bottleneck; the
+latent dimension is. Selecting on lowest validation loss picks the model that reconstructs
+fraud exactly as faithfully as normal behaviour, whose two error distributions land on top of
+each other. Selection was moved to the *ratio* of fraud to normal reconstruction error on
+validation, and the two criteria do not agree.
+
+**The selection over the runner-up rests inside the noise.** Delta against latent=8, W=20:
+95% CI [-0.0048, 0.0048]. The interval includes zero, so on this test split the runner-up
+performs as well and the choice rests on a point estimate that the evidence does not separate.
+Recorded rather than presented as a decisive win.
+
+### Known gaps leaving Phase 3
+
+- **Tier-2 is a fusion input, not a standalone layer.** It loses to Tier-1 alone and only
+  earns its place through the 1.5x residual lift above. If Phase 5 finds the meta-learner does
+  not use it, the honest conclusion is that this layer did not pay for itself.
+- **86.6% of test accounts are never scored.** Coverage, not accuracy, is the binding
+  constraint, and it follows from the corpus rather than from the model.
+- **By value, 87.6% of test fraud value sits in the accounts this layer missed** — the same
+  direction of failure Phase 2 measured for Tier-1, which catches 24.6% of fraud by count and
+  14.6% by value. Both layers are weakest on the expensive cases.
+- **Attention/contribution weights ship but are unused.** `explain()` returns per-timestep
+  error contributions for the Phase 8 panel; nothing reads them yet.
+- **No PaySim Tier-2 model exists and none should.** Phase 1 measured 99.9% of PaySim accounts
+  holding a single transaction and `seconds_since_prior_txn` 99.94% null. A sequence model
+  needs sequences.
+
+## Phase 4 — Tier-3 network graph abuse-ring layer
+
+**Verified end state.** `python -m app.models.train_tier3` builds both graphs, sweeps their
+edge parameters on validation, and scores the held-out test split exactly once per corpus.
+**IEEE-CIS ring-level test PR-AUC 0.6462** (95% CI 0.5703–0.7214) against a **0.1076** ring
+base rate — a **6.01x lift** on 1,329 test rings. **PaySim ring-level 0.9977** against a
+0.8369 base rate — a **1.19x lift**, which is the number that matters and is close to nothing.
+Serving is a dictionary lookup: p50 0.001ms, p99 0.003ms against a 50ms budget. `ruff`,
+`black`, `mypy --strict` and the full suite green; 84 Tier-3 tests, 323 overall.
+
+**The honest summary of this phase in one paragraph.** Tier-3 earns its place on IEEE-CIS and
+does not earn it on PaySim. On PaySim the amount-and-step pairing rule alone reaches precision
+0.9948 and recall 0.9943 before any graph runs; the graph then adds a 1.19x ranking lift inside
+a candidate population that is already 84% fraud-bearing, and changes no decision the rule had
+not already made. On IEEE-CIS the ring-level detector is real — 6.01x over its floor, with an
+independent enrichment check agreeing at 6.20x — but its per-transaction projection is *below*
+no-skill and fusing it into Tier-1 makes Tier-1 measurably worse. What this layer has earned is
+ring-level detection on the corpus with genuine shared-entity structure. Nothing more.
+
+**Every number here is post-review.** The first four sets were wrong, in ways recorded below.
+
+### Six measured findings that change later phases
+
+**1. PaySim's observed money-flow graph is a star forest, so the observed edge alone is not a
+graph problem.** Measured on the train split: 1,937,588 distinct origins over 1,938,484 rows,
+**99.95% of origins have degree 1**, the maximum is 2, and exactly **341 of 2,291,054 nodes**
+are both an origin and a destination. Louvain over that returns the 353,807 destination stars,
+which is `groupby(nameDest)` spelled expensively, and betweenness on a star is a restatement of
+degree. The inferred transfer-to-cash-out chain edge is not an enhancement — it is the only
+thing that makes this a graph at all.
+
+**2. The chain edge works because it is reading the simulator.** Exact-amount same-step
+matching selects **99.50% of fraudulent transfers against 0.23% of legitimate ones**, median
+one candidate partner, 99.73% of matched partners themselves fraud. It is PaySim's generative
+rule read back out — the same species as Tier-1's PaySim PR-AUC of 0.9998 on
+`amount == oldbalanceOrg`. There is no usable tolerance band either: at ±0.1% the legitimate
+match rate rises from 0.23% to **64.2%** and candidate pairs from 2,681 to 2.9M. A real
+money-flow graph would need tolerance for fees and partial cash-outs; this one does not,
+because the simulator copies the amount exactly.
+
+**3. On PaySim the graph adds essentially nothing, and each round of leakage removal made that
+clearer.** The ring-level lift over the pairing rule's own population went **1.30x → 1.55x →
+1.19x** as contamination came out, against a base rate that climbed to 0.837. The +0.1609
+lift-over-rule figure (95% CI +0.1593 to +0.1620) is real but is measured inside a population
+that is 84% positive to begin with. At the capacity-capped operating point the layer flags
+0.48% of rings at precision 1.000 and **recall 0.0057** — 12 true positives against 2,086
+misses. This is a precision instrument at a very conservative threshold, not a detector.
+**PaySim's role in this project is mechanism demonstration and the two visualisations. It is
+not evidence the layer works.**
+
+**4. The unit of analysis differs by corpus, chosen on validation.** PaySim abstains on
+**100.0%** of validation *and* test transactions — origins are near-unique, so an account seen
+in one window essentially never returns and there is nothing for a per-transaction score to
+attach to. The ring is the only unit that exists there. IEEE-CIS abstains on 64.8% of
+validation transactions and keeps the transaction. Both rates are recorded. Same move Phase 3
+made in declaring Tier-2 per account.
+
+**5. IEEE-CIS ring detection ranks well; its per-transaction projection is worse than random.**
+Ring-level PR-AUC 0.6462 at 6.01x, precision 0.8889 at recall 0.1119 (TN 1,184, FP 2, FN 127,
+TP 16). Projecting ring membership onto individual transactions collapses it: **0.0314 against
+a 0.0348 floor, a 0.902x lift — below no-skill**. Fusing that with Tier-1 through a
+validation-fitted logistic combiner moves PR-AUC from **0.5276 to 0.5244, a delta of −0.0031
+with a 95% CI of [−0.0038, −0.0026]** that excludes zero *on the negative side*. The cause is
+structural: a fraud ring's members transact mostly legitimately, so "is in a fraud-bearing
+ring" is a weak per-transaction predictor even when the ring is correctly found. **Phase 5 must
+not treat `tier3_ring_risk_score` as a proven scalar input** — both facts are automatic caveats
+inside the registry entry. If Phase 5 wants this layer it should consume ring-level features:
+ring risk, ring size, centrality, membership.
+
+**6. Most of the IEEE-CIS ring signal is circular with the constructed account UID.**
+`account_id` is `c{card1}_a{addr1}_d{d1n}`, so two accounts sharing the winning fingerprint
+`(card1, card2, card5, addr1)` differ *only* in `d1n`. The non-circular control — device
+fingerprint alone, sharing no column with the UID — was run as a third configuration and scores
+far lower on validation. That gap is the honest measure of how much of the headline is "one
+card fragmented into several inferred identities" rather than observed collusion. It is now
+stated in the report prose and the registry notes, not only here.
+
+### Obstacles hit and how they were solved
+
+**Overlapping snapshot windows inflated every ring number, and it took two attempts to fix.**
+Windows are much wider than the cadence — seven days against one on PaySim, thirty against
+seven on IEEE-CIS — so the same ring reappears in roughly seven (respectively four) consecutive
+snapshots. Left alone, the scorer was selected and scored on rings it had been fitted on, and
+the bootstrap treated near-identical copies as independent draws: a 95% CI of
+**[0.9931, 0.9952] on 18,846 "rings"** that were nothing like 18,846 independent observations.
+The first fix keyed a ring on its **exact** member set. An `ml-evaluator` pass then measured
+that this was not enough: **58% of the surviving PaySim test rings and 82% of the IEEE-CIS
+validation rings still overlapped a training-split ring by at least half.** One member changing
+made a new key while leaving the ring the same ring. The apparent 2% removal rate on IEEE-CIS
+was evidence the *key* was wrong, not evidence its rings were independent — this log had read
+it the opposite way. De-duplication is now by overlap coefficient ≥ 0.5 against every
+already-kept earlier ring, via an inverted index. PaySim's test rings fell from 18,846 to
+**2,507** and IEEE-CIS's to **1,329**, and the intervals widened accordingly.
+
+**Then the fix for that was itself scoped wrongly.** De-duplication was applied to the scoring
+path as well as the evaluation population, which pushed IEEE-CIS's transaction abstention rate
+from 65.2% to **96.7%** — a fact about the evaluation's own bookkeeping being reported as a
+property of the layer, and it dragged the transaction PR-AUC and the fusion delta with it. It
+is a metric device: the scorer fits on de-duplicated training rings, *all* rings feed the score
+table, and the ring metric reads the de-duplicated subset of those same scored rows so the two
+views cannot disagree. Caught by reading the run's own output.
+
+**Results were not reproducible, and the seed was never the problem.** Same code, same seed,
+same `feature_version`, two runs: ring PR-AUC **0.986566 vs 0.986451**, and an `entity_cap=50`
+validation score that moved by **0.010** — wider than several selection margins it was being
+used to decide. `nx.connected_components` and Louvain both return *sets*, CPython randomises
+string hashing per process, and Louvain's `seed` seeds its own randomness rather than the order
+nodes arrive in. Components, their nodes, and the returned communities are now all explicitly
+sorted; three subprocesses produce byte-identical output. The old determinism test called the
+function twice in one interpreter and was structurally blind to this; the new one spawns real
+processes.
+
+**Every ring-level cost was published under the wrong denominator.** `CostEstimate.render()`
+hardcoded "transactions" while dividing by a ring count, so PaySim's figure read ~60x its real
+per-transaction value. `CostModel` now carries a `unit_noun` and ring costs say "per 1,000
+rings". This log previously asserted "the figures are correct" under that label; they were not.
+
+**The mandated ±50% sensitivity analysis was algebraically incapable of a result.** Scaling
+both cost parameters by the same factor multiplies total cost by that factor and cannot move
+the argmin — verified: threshold identical at 0.5x, 1.0x and 1.5x. It is reported because
+section 3 names it, and the report now says plainly that its flatness is arithmetic rather than
+evidence, pointing at the review-cost sweep, which varies the FP:FN *ratio*, as the informative
+one. Both sweeps also moved off test onto validation, since they re-choose the threshold.
+
+**The unit of analysis was being selected on the test split.** The existing guard could not
+catch it: it perturbs test *labels*, and the abstention rate depends on NaN *scores*, so it was
+invariant to the corruption and passed while the contamination stood. Now chosen on validation.
+
+**The report printed a false mechanism above the IEEE-CIS headline.** "Every candidate ring
+exists because a chain edge created it… the detected-ring population *is* the pairing rule's
+output" was emitted unconditionally — but IEEE-CIS has no chain edge and no pairing rule, and
+the star filter is deliberately skipped there. It also promised a surrogate cross-check that is
+only ever run for PaySim. Both are now corpus-conditional.
+
+**Louvain destroyed the exact structure the chain edge exists to create.** Modularity
+maximisation is meaningless on a four-node path; on a 24-step window it split **121 of 121**
+chain-linked components below the minimum ring size. Components at or below
+`SMALL_COMPONENT_MAX` (12 accounts) are taken whole.
+
+**A star is not a ring, and without saying so the detector finds 353,807 of them.** The
+`MIN_BRANCH_NODES` filter requires two junction nodes of degree ≥2 — deliberately structural,
+naming no chain edge, no amount and no entity. Skipped on the bipartite IEEE-CIS graph, where
+the hub is an *entity* and several accounts on one device is the target structure.
+
+**Single IEEE-CIS columns are buckets, not identifiers.** `card4` and `card6` hold four values
+each with 98,466 accounts on one, `addr2` 67, `P_emaildomain` 59. Composite fingerprints were
+measured before anything was built: `(card1, card2, card5, addr1)` reaches 86.7% coverage at a
+maximum of 427 accounts per fingerprint; `(addr1, P_emaildomain)` was measured at 5,804
+accounts on one value and **rejected as a hub before it reached the code**.
+
+**`ring_density` was identically zero on IEEE-CIS**, because no two accounts are adjacent on a
+bipartite graph. It now computes the bipartite fill rate. Found by reading a `describe()`.
+
+**Feature extraction was the slowest stage, because of NetworkX views.** `Graph.subgraph`
+returns a *filtered view* and every access re-runs the filter; a 30-day window took 68s.
+Walking the parent adjacency dict directly cut it to 17.4s with identical output.
+
+**A chain edge was deleting the flow edge underneath it.** `relation` was one mutually
+exclusive label and a mule is routinely both endpoints, so `add_edge` replaced the attribute
+dict and the observed edge vanished — inflating two scorer features. Edges now carry
+independent `flow` and `chain` flags. The visualisation kept filtering on the removed label,
+so every chain link was drawn grey while the legend promised red: a picture contradicting its
+own caption, which no metric would have caught.
+
+**A path-traversal guard was added and then not used everywhere.** `require_bare_model_id` /
+`artifact_path` were introduced because both Tier-2's and Tier-3's inline checks missed a
+Windows drive-relative id such as `C:secret`, where pathlib discards the base directory. A
+`/security-review` then found `load_tier1_scores` in the new driver still building
+`artifact_dir / f"{model_id}.txt"` by hand — from a `model_id` read out of `registry.json`,
+which `append_entry` does not re-validate — in the very change that added the guard. All tier
+save/load paths now route through it, and a test scans `app/` and fails if a call site skips it.
+
+**Three separate fixes silently failed to apply, and two had passing tests.** `black`
+reformatted the anchor text between writing a patch and applying it, so the replacement matched
+nothing: the IEEE ring threshold kept using a transaction-selected operating point, `_accounts_in`
+kept returning unsorted nodes, and the chain-edge render kept filtering on a dead attribute. The
+ring-threshold test passed anyway because it ran on the PaySim fixture, where the ring *is* the
+unit and both thresholds coincide. Every one was caught by reading run output rather than by the
+suite, which stayed green throughout.
+
+### Design decisions worth stating
+
+- **One algorithm, two real graphs, no transported score.** `EntityGraph` is an abstract base;
+  the two subclasses differ only in which edges exist. `Tier3Model.score` raises if handed a
+  transaction from the other corpus rather than returning a plausible-looking number.
+- **The scorer reads topology, never money**, tested behaviourally: multiplying every amount by
+  1000 preserves exact-match chains, so ring features must come out bit-identical, with a
+  paired guard that plants an amount-derived column and asserts it *does* differ.
+- **Serving does no graph work.** Community detection happens in the snapshot job; the request
+  path is a dictionary lookup. This is what makes Phase 7's Tier-3 timeout implementable.
+- **One per-account score rule, in one place.** An account is scored by *its own* highest score
+  across its rings. Three copies of that rule used to exist and they were not the same rule —
+  the served path gave every member the ring's maximum while the offline metric took the
+  per-account maximum, so the number reported and the number served were different quantities.
+- **Accounts outside a ring abstain**, never 0.0, and the two abstention reasons are
+  distinguishable — the model carries the snapshot's full account roster, without which every
+  abstention claimed the account had never been seen.
+- **De-duplication is an evaluation device with a stated, unfitted threshold.** 0.5 is a
+  leakage-control choice, not selected on any split, because selecting it would mean choosing
+  how much leakage to permit by looking at the result.
+- **Ring-level ground truth does not exist and was not invented.** The surrogate partition is
+  built from labels and labelled a surrogate everywhere, with an enrichment view that depends
+  on no partition reported beside it. On both corpora the two agree (PaySim 1.19x against
+  1.192x; IEEE-CIS 6.20x against 6.01x).
+
+### Known gaps leaving Phase 4
+
+- **PaySim contributes a 1.19x lift on an 84%-positive population and should not be presented
+  as a working detector.** Its entry opens with the automatic `DO NOT QUOTE AS A HEADLINE`
+  caveat.
+- **`tier3_ring_risk_score` is not a proven Phase 5 input** — finding 5, and a registry caveat.
+- **Most of the IEEE-CIS signal is circular with the account UID** — finding 6.
+- **Operating-point recall is very low on both corpora**: 0.1119 on IEEE-CIS rings, 0.0057 on
+  PaySim rings, under a 1% review-capacity cap.
+- **The ring metrics describe rings that do not substantially repeat an earlier one.** A ring
+  the scorer has already seen is excluded by construction, so nothing here speaks to persistent
+  rings — which in a real deployment are exactly what you would want to catch.
+- **Surrogate ring recovery on PaySim**: precision 0.8189, recall 0.7271, F1 0.7703 at overlap
+  ≥ 0.3, over 2,507 detected against 2,822 unique surrogate rings. No surrogate check exists
+  for IEEE-CIS, because the partition is built from money-flow edges that corpus does not have.
+- **The cost sensitivity sweep is degenerate on IEEE-CIS**, re-choosing a threshold at the
+  abstention sentinel and flagging 100% of traffic at every scale — the unbounded
+  review-capacity assumption biting as the cost model's own assumption list warns.
+- **The recommended IEEE-CIS transaction operating point flags 2.40% against a 1.0% cap**,
+  because ring scores are heavily tied and no finite threshold lands on the cap.
+- **`max_degree_centrality` can exceed 1.0 on the bipartite graph**, where a member's degree
+  counts entity nodes. It is not a fraction and must not be rendered as a percentage in Phase 8.
+- **16 Tier-3 registry entries exist.** The file is append-only and this phase was run
+  to completion 8 times as defects were found in its outputs -- every one of them by
+  reading the run's own output rather than by a failing test. Each entry now records what it
+  supersedes; the authoritative pair is `tier3-graph-louvain-paysim-20260824t023943z` and
+  `tier3-graph-louvain-ieee-cis-20260824t030009z`.
+- **The PaySim `heldout_test` has no top-level `pr_auc`**, only the nested `ring_level` block,
+  because the ring is its unit. Any consumer indexing `entry["heldout_test"]["pr_auc"]` must
+  handle that.

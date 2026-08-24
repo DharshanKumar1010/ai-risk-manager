@@ -63,3 +63,32 @@ Four fields carry the evaluation bar in
 pipeline's. Tier-1 reads raw row columns the pipeline deliberately kept out of
 `transactions.features`, so it mints its own hash via `Tier1InputSpec.to_feature_definition()`.
 Whatever hash is recorded here must reconstruct exactly the inputs the model saw.
+
+## Tier-3 entries carry an extra unit of analysis
+
+Added in Phase 4. Tier-1 and Tier-2 both evaluate one unit — a transaction and an account
+respectively — so their `heldout_test` is flat. Tier-3 evaluates a **ring**, and on PaySim
+that is the *only* unit available: origins there are near-unique (99.95% have degree 1), so an
+account seen in one snapshot window essentially never returns in the next and a
+per-transaction ring score abstains on effectively everything. A Tier-3 entry therefore nests:
+
+- `ring_level` — the ring-as-unit result, in the same shape as any other `heldout_test`, with
+  its own ring base rate. Where a corpus has no usable transaction-level result this is the
+  headline, and the top-level keys are absent rather than filled with a near-empty column.
+- `surrogate_ring_recovery` — overlap against a ground-truth partition **constructed from the
+  labels**, because PaySim ships no ring or agent identifier. The `caveat` field says so, and
+  it is not optional.
+- `enrichment` — precision@k against the ring base rate. Depends on no surrogate partition, so
+  it is the check on whether the surrogate is defining its own success.
+- `increment_over_pairing_baseline` (PaySim) — the candidate rings *are* the amount-and-step
+  pairing rule's output, so the rule is the no-skill floor for that population and this field
+  is how far ranking rose above it.
+- `incremental_lift_over_tier1` (IEEE-CIS) — the number Phase 5 reads. Its `ci95` may exclude
+  zero on the negative side, which means the score made a fused ranking *worse*; that is
+  recorded rather than rounded away.
+
+**`feature_version` on a Tier-3 entry uses a `gv_` prefix, not `fv_`.** Tier-1 and Tier-2 read
+an engineered per-row vector; Tier-3 reads graph topology, and what changes its inputs is the
+edge rule, the entity degree cap and the window — none of which the Phase 1 feature store
+knows about. Sharing the `fv_` namespace would imply the two identify the same space in an
+audit row when they do not.

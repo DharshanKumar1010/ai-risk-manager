@@ -87,6 +87,7 @@ from app.ml.registry import (
     DEFAULT_REGISTRY_PATH,
     RegistryEntry,
     append_entry,
+    artifact_path,
     build_model_id,
 )
 from app.models.tier2_behavioral import (
@@ -702,8 +703,8 @@ def load_tier1_account_scores(
         return None
 
     model_id = str(entries[-1]["model_id"])
-    sidecar_path = artifact_dir / f"{model_id}.meta.json"
-    booster_path = artifact_dir / f"{model_id}.txt"
+    sidecar_path = artifact_path(model_id, artifact_dir, ".meta.json")
+    booster_path = artifact_path(model_id, artifact_dir, ".txt")
     if not sidecar_path.exists() or not booster_path.exists():
         logger.warning(
             "Tier-1 artefact %s is not on disk; the baseline will be omitted and the report "

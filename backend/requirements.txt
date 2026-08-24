@@ -19,7 +19,7 @@ pyjwt>=2.10,<3.0
 
 # --- Data and ML layer -------------------------------------------------------
 # Added in Phase 1 for the feature pipeline. The remaining per-tier model libraries
-# (xgboost, networkx, econml) arrive with their own phases — adding them now
+# (xgboost, econml) arrive with their own phases — adding them now
 # would inflate the image for code that does not exist yet.
 #
 # pandas 3.x is the current major: copy-on-write is enforced and string columns are
@@ -46,7 +46,22 @@ torch>=2.5,<3.0
 
 # Phase 3 requires the reconstruction-error distribution and the training loss curve as
 # plots, and they gate the phase. Agg backend only — nothing here opens a window.
+# Phase 4 reuses it for the detected-ring and clean-cluster visualisations.
 matplotlib>=3.9,<4.0
+
+# Phase 4, Tier-3. NetworkX over python-igraph: `networkx.community.louvain_communities`
+# is built in, removing a `python-louvain` dependency, and igraph's speed advantage does not
+# bind here. Phase 4 measured PaySim's money-flow graph to be a star forest of small
+# components (max destination degree 71) and caps IEEE-CIS entity degree, so community
+# detection runs per connected component and never over one large graph. The graph is held
+# behind our own `EntityGraph` wrapper, so swapping the backend stays a backend change.
+#
+# NetworkX 3.6 does NOT ship `py.typed`, contrary to what the Phase 4 plan assumed — mypy
+# reports missing stubs for it. Rather than widen the `ignore_missing_imports` allowlist in
+# pyproject.toml, `types-networkx` is added below, for the same reason `pandas-stubs` is
+# there: under strict mode an untyped graph library makes every expression touching a node,
+# an edge or an attribute `Any`, and this is the layer where a leakage bug would hide.
+networkx>=3.4,<4.0
 
 # --- Development and CI ------------------------------------------------------
 # Installed in the dev image and in CI. Phase 10 splits these out of the
@@ -68,6 +83,8 @@ mypy>=1.13,<2.0
 # pandas would make every DataFrame expression `Any` and quietly void strict mode across
 # the whole data layer — which is the layer where a leakage bug would actually hide.
 pandas-stubs>=3.0,<4.0
+# Real networkx types rather than `ignore_missing_imports` — see the Phase 4 note above.
+types-networkx>=3.4,<4.0
 pip-audit>=2.7,<3.0
 pre-commit>=4.0,<5.0
 

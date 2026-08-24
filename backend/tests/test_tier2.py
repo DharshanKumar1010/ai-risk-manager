@@ -588,7 +588,7 @@ def test_saved_artifact_is_a_tensor_dict_not_a_pickled_module(
 @pytest.mark.parametrize("model_id", ["../escape", "sub/dir", "..", ""])
 def test_load_refuses_a_path_traversing_model_id(tmp_path: Path, model_id: str) -> None:
     """``model_id`` is resolved against the artefact directory, never used as a path."""
-    with pytest.raises(ValueError, match="bare filename component"):
+    with pytest.raises(ValueError, match="registry identifier|relative path component"):
         Tier2Model.load(model_id, tmp_path)
 
 

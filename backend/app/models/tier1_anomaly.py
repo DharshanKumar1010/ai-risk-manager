@@ -44,6 +44,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.data.schema import TransactionFeatures
+from app.ml.registry import artifact_path
 from app.models.tier1_features import Tier1InputSpec
 
 #: Latency budget for one scoring call, from PHASE_PROMPTS.md Phase 2.
@@ -324,13 +325,13 @@ class Tier1Model:
 
         directory.mkdir(parents=True, exist_ok=True)
         if self.algorithm == "lightgbm":
-            artifact = directory / f"{self.model_id}.txt"
+            artifact = artifact_path(self.model_id, directory, ".txt")
             self.estimator.save_model(str(artifact))
         else:
-            artifact = directory / f"{self.model_id}.joblib"
+            artifact = artifact_path(self.model_id, directory, ".joblib")
             joblib.dump(self.estimator, artifact)
 
-        sidecar = directory / f"{self.model_id}.meta.json"
+        sidecar = artifact_path(self.model_id, directory, ".meta.json")
         sidecar.write_text(
             json.dumps(
                 {

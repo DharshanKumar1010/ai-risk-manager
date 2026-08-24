@@ -24,7 +24,7 @@ loss stays comparable across the two, which is the only thing that transfers.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -64,6 +64,10 @@ class CostModel:
     review_cost: float = DEFAULT_REVIEW_COST
     chargeback_fee: float = DEFAULT_CHARGEBACK_FEE
     units: str = "IEEE-CIS amount units (consistent with USD)"
+    #: What one row of the evaluated population *is*. Tiers 1 and 2 score transactions; Tier-3
+    #: scores rings, and a ring cost printed "per 1,000 transactions" reads as roughly 60x its
+    #: real per-transaction figure. The noun travels with the number.
+    unit_noun: str = "transaction"
 
     @classmethod
     def scaled_to(cls, median_amount: float, units: str) -> "CostModel":
@@ -88,6 +92,10 @@ class CostModel:
             chargeback_fee=DEFAULT_CHARGEBACK_FEE * ratio,
             units=units,
         )
+
+    def with_unit(self, unit_noun: str) -> "CostModel":
+        """Return a copy whose cost figures are labelled per ``unit_noun``."""
+        return replace(self, unit_noun=unit_noun)
 
     def scaled_by(self, factor: float) -> "CostModel":
         """Return this model with both cost parameters multiplied by ``factor``."""
@@ -136,7 +144,7 @@ class CostEstimate:
 
     @property
     def flag_rate(self) -> float:
-        """Return the share of all transactions this threshold sends for review.
+        """Return the share of all scored units this threshold sends for review.
 
         The operationally decisive number, and the one a precision figure hides. Precision
         0.06 at a 40% flag rate and precision 0.06 at a 0.4% flag rate are the same metric
@@ -145,8 +153,13 @@ class CostEstimate:
         return self.flagged / self.rows if self.rows else 0.0
 
     @property
-    def cost_per_1000_transactions(self) -> float:
-        """Return cost normalised per 1,000 transactions scored.
+    def cost_per_1000_units(self) -> float:
+        """Return cost normalised per 1,000 scored units.
+
+        "Units", not "transactions": Tier-3 evaluates rings, and a ring cost divided by a ring
+        count but labelled per-transaction reads as roughly 60x its real per-transaction value.
+        The noun comes from :attr:`CostModel.unit_noun` so the label cannot drift from what was
+        actually counted.
 
         The comparable figure across splits and corpora of different sizes — though still
         never across corpora of different *units*.
@@ -165,7 +178,8 @@ class CostEstimate:
             "false_positive_cost": round(self.false_positive_cost, 2),
             "false_negative_cost": round(self.false_negative_cost, 2),
             "total_cost": round(self.total_cost, 2),
-            "cost_per_1000_transactions": round(self.cost_per_1000_transactions, 4),
+            "unit": self.model.unit_noun,
+            f"cost_per_1000_{self.model.unit_noun}s": round(self.cost_per_1000_units, 4),
             "flagged": self.flagged,
             "flag_rate": round(self.flag_rate, 6),
             "assumptions": self.model.assumptions(),
@@ -174,13 +188,13 @@ class CostEstimate:
     def render(self) -> str:
         """Return the cost block for the metrics report."""
         lines = [
-            f"False-positive cost estimate: {self.cost_per_1000_transactions:,.2f} "
-            f"per 1,000 transactions  [{self.model.units}]",
+            f"False-positive cost estimate: {self.cost_per_1000_units:,.2f} "
+            f"per 1,000 {self.model.unit_noun}s  [{self.model.units}]",
             f"  {self.false_positives:,} false positives x "
             f"{self.model.review_cost:,.2f} = {self.false_positive_cost:,.2f}",
             f"  {self.false_negatives:,} false negatives (amount + "
             f"{self.model.chargeback_fee:,.2f}) = {self.false_negative_cost:,.2f}",
-            f"  total = {self.total_cost:,.2f} over {self.rows:,} transactions",
+            f"  total = {self.total_cost:,.2f} over {self.rows:,} {self.model.unit_noun}s",
             f"  flag rate = {100 * self.flag_rate:.2f}% " f"({self.flagged:,} sent for review)",
             "  Assumptions:",
         ]
@@ -376,7 +390,7 @@ def threshold_for_flag_rate(
     scores: npt.NDArray[np.float64],
     max_flag_rate: float,
 ) -> float:
-    """Return the lowest threshold flagging no more than ``max_flag_rate`` of transactions.
+    """Return the lowest threshold flagging no more than ``max_flag_rate`` of scored units.
 
     The capacity-constrained operating point. Every real review queue has a ceiling, and a
     cost-optimal threshold that ignores it is not deployable however good its arithmetic. The

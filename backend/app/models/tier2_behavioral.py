@@ -55,6 +55,7 @@ from torch import Tensor, nn
 from torch.nn.utils.rnn import pack_padded_sequence
 
 from app.data.schema import TransactionFeatures
+from app.ml.registry import artifact_path
 from app.models.tier2_sequences import SequenceWindows, Tier2SequenceSpec
 
 #: p95 serving budget for one scoring call, in milliseconds. The same figure Tier-1 holds:
@@ -451,10 +452,10 @@ class Tier2Model:
         ``Tier1Model.save``'s choice of LightGBM's text format over a pickle.
         """
         directory.mkdir(parents=True, exist_ok=True)
-        artifact = directory / f"{self.model_id}.pt"
+        artifact = artifact_path(self.model_id, directory, ".pt")
         torch.save(self.network.state_dict(), artifact)
 
-        sidecar = directory / f"{self.model_id}.meta.json"
+        sidecar = artifact_path(self.model_id, directory, ".meta.json")
         sidecar.write_text(
             json.dumps(
                 {
@@ -475,17 +476,16 @@ class Tier2Model:
     def load(cls, model_id: str, directory: Path) -> "Tier2Model":
         """Rebuild a model from the artefact directory.
 
-        ``model_id`` is resolved against ``directory`` rather than accepted as a path, and it
-        is validated to be a bare filename component: a caller-supplied ``../`` would
-        otherwise reach outside the artefact directory, which is exactly the traversal the
-        security checklist's input-handling section exists to prevent.
+        ``model_id`` is resolved against ``directory`` rather than accepted as a path, by
+        :func:`app.ml.registry.artifact_path`, which validates it is a bare component and then
+        re-checks that the resolved path is still inside the directory. The separator check
+        this used to do inline missed a Windows drive-relative id such as ``C:secret``, where
+        pathlib discards the base directory entirely -- the traversal the security checklist's
+        input-handling section exists to prevent.
         """
-        if "/" in model_id or "\\" in model_id or model_id in ("", ".", ".."):
-            raise ValueError(
-                f"model_id {model_id!r} is not a bare filename component; refusing to resolve "
-                "it against the artefact directory."
-            )
-        sidecar = json.loads((directory / f"{model_id}.meta.json").read_text(encoding="utf-8"))
+        sidecar = json.loads(
+            artifact_path(model_id, directory, ".meta.json").read_text(encoding="utf-8")
+        )
         spec = Tier2SequenceSpec.from_dict(sidecar["spec"])
         hyperparameters = dict(sidecar["hyperparameters"])
         network = build_network(
@@ -494,7 +494,9 @@ class Tier2Model:
             hidden_size=int(hyperparameters["hidden_size"]),
             latent_size=int(hyperparameters["latent_size"]),
         )
-        state = torch.load(directory / f"{model_id}.pt", weights_only=True, map_location="cpu")
+        state = torch.load(
+            artifact_path(model_id, directory, ".pt"), weights_only=True, map_location="cpu"
+        )
         network.load_state_dict(state)
         return cls(
             model_id=sidecar["model_id"],

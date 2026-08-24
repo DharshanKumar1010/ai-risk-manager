@@ -15,7 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 #: Repo-root ``models/`` from ``backend/app/ml/registry.py`` — up four to the repo root.
@@ -53,6 +53,58 @@ def build_model_id(layer: str, algorithm: str, corpus: str, moment: datetime | N
     if not MODEL_ID_PATTERN.match(slug):
         raise ValueError(f"Model id {slug!r} contains characters that are unsafe in a filename")
     return slug
+
+
+def require_bare_model_id(model_id: str) -> None:
+    """Reject a model id that is not a single, relative path component.
+
+    Raises:
+        ValueError: If the id is empty, a parent reference, or carries a separator, a drive or
+            a root.
+    """
+    if not model_id or model_id in {".", ".."}:
+        raise ValueError(f"model_id must be a non-empty registry identifier, got {model_id!r}")
+    if "/" in model_id or "\\" in model_id or ".." in model_id:
+        raise ValueError(
+            f"model_id must be a bare registry identifier, got {model_id!r}. An artefact path "
+            "is built from it and a traversing id would read or write outside the model "
+            "directory."
+        )
+    candidate = PurePath(model_id)
+    if candidate.drive or candidate.root or len(candidate.parts) != 1:
+        raise ValueError(
+            f"model_id must be a single relative path component, got {model_id!r}. A drive "
+            "letter or root makes the artefact path absolute and escapes the model directory."
+        )
+
+
+def artifact_path(model_id: str, directory: Path, suffix: str) -> Path:
+    """Return ``directory/model_id+suffix``, proven to sit inside ``directory``.
+
+    The single place a model id becomes a filesystem path, for every tier. Separator checks
+    alone are not enough on Windows, which this project is developed on:
+    ``Path("models/artifacts") / "C:secret.json"`` evaluates to ``C:secret.json``, because
+    pathlib discards the base whenever a segment carries a drive. Validation and resolution
+    are kept together because a guard that runs somewhere other than where the path is built
+    is a guard a later caller can forget -- which is how the same hole ended up in two tiers.
+
+    Args:
+        model_id: Bare registry identifier.
+        directory: The artefact directory the result must stay inside.
+        suffix: Extension to append, e.g. ``".json"`` or ``".meta.json"``.
+
+    Raises:
+        ValueError: If the id is unsafe, or resolves outside ``directory``.
+    """
+    require_bare_model_id(model_id)
+    root = directory.resolve()
+    resolved = (root / f"{model_id}{suffix}").resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError(
+            f"model_id {model_id!r} resolves to {resolved}, outside the artefact directory "
+            f"{root}. Refusing to read or write it."
+        )
+    return resolved
 
 
 @dataclass

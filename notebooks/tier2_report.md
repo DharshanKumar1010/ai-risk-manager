@@ -113,7 +113,9 @@ Tier-2 is not built to replace Tier-1 — Phase 5 **fuses** them. A weaker signa
 - Among the 43,094 test accounts Tier-1 leaves below its own capacity threshold — the accounts a Tier-1-only system does not review — 691 are fraudulent (1.60%).
 - Tier-2 ranks that residual at PR-AUC **0.0242** against a floor of 0.0160 — **1.5x lift on the fraud Tier-1 would not have looked at.**
 
-That residual lift is what Phase 5 inherits. It is a narrower claim than the phase brief implies and it is the one the measurements support.
+A 1.5x residual lift is **not** on its own evidence that the layer earns its place, and this report does not claim it is. What it establishes is narrower: the two signals are close to orthogonal, and Tier-2 ranks Tier-1's residual above chance. Whether that converts into anything is a question only the fused model can answer.
+
+**The test Phase 5 should run**, stated here so it is not quietly skipped: fit the meta-learner with and without the Tier-2 feature, on validation, and keep the feature only if the paired PR-AUC delta excludes zero. If it does not, this layer is a negative result and should be written up as one rather than carried because it was built.
 
 **Selection over the runner-up** (LSTM autoencoder (latent=8, W=20)): delta 95% CI [-0.0048, 0.0048]. **The interval includes zero**: on this test split the runner-up performs as well, and the selection rests on a point estimate inside the noise.
 
@@ -311,10 +313,10 @@ Cost sensitivity, review cost ONLY (the direction that moves the recommendation)
 
 ```
 100 sequential score() calls
-  p50  3.976 ms
-  p95  5.563 ms   (budget 50 ms)
-  p99  5.761 ms
-  max  7.359 ms
+  p50  13.977 ms
+  p95  32.466 ms   (budget 50 ms)
+  p99  45.183 ms
+  max  46.359 ms
 ```
 
 Measures the scoring call only — window in, decision out. Assembling the window from the account's history is Phase 7's scoring endpoint and is budgeted separately.
