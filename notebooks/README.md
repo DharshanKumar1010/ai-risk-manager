@@ -20,6 +20,8 @@ notebook does: there is no cell that can hold a number the code no longer produc
 | `tier1_report.md` | `python -m app.models.train_tier1` | 2 |
 | `tier2_report.md`, `tier2_loss_curve.png`, `tier2_error_distribution.png` | `python -m app.models.train_tier2` | 3 |
 | `tier3_report.md`, `tier3_ring_detected.png`, `tier3_cluster_clean.png` | `python -m app.models.train_tier3` | 4 |
+| `meta_report.md`, `meta_calibration_curve.png` | `python -m app.models.train_meta_learner` | 5 |
+| `cost_report.md`, `cost_curve.png` | `python -m app.models.train_cost_learner` | 6 |
 
 The two Tier-3 images are the Phase 4 visual gate: a detected ring and a clean cluster have to
 be visibly different, not merely differently labelled. Red nodes are accounts touching

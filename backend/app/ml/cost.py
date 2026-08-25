@@ -25,10 +25,15 @@ loss stays comparable across the two, which is the only thing that transfers.
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle broken for typing only
+    # app.ml.evaluation imports CostEstimate from here, so the runtime import goes the other
+    # way round inside the one function that needs it.
+    from app.ml.evaluation import ConfusionMatrix
 
 #: Cost of reviewing or declining one flagged legitimate transaction, in IEEE-CIS amount
 #: units (that corpus's amounts are consistent with USD). Covers analyst time on a manual
@@ -227,13 +232,45 @@ def cost_at_threshold(
     )
 
 
-def _cost_curve(
+@dataclass(frozen=True)
+class CostCurve:
+    """Every achievable operating point, with what each one costs and captures.
+
+    Attributes:
+        thresholds: Candidate thresholds, descending in flag rate order.
+        costs: Total cost at each threshold.
+        caught_value: Fraud value captured at each threshold.
+        flagged: Rows flagged at each threshold.
+        total_positive_value: Fraud value available to capture. The denominator of value
+            recall, carried here so a caller cannot divide by the wrong total.
+    """
+
+    thresholds: npt.NDArray[np.float64]
+    costs: npt.NDArray[np.float64]
+    caught_value: npt.NDArray[np.float64]
+    flagged: npt.NDArray[np.float64]
+    total_positive_value: float
+
+    @property
+    def value_recall(self) -> npt.NDArray[np.float64]:
+        """Return the share of fraud value captured at each operating point."""
+        if not self.total_positive_value:
+            return np.zeros_like(self.caught_value)
+        return self.caught_value / self.total_positive_value
+
+
+def cost_curve(
     labels: npt.NDArray[np.bool_],
     scores: npt.NDArray[np.float64],
     amounts: npt.NDArray[np.float64],
     model: CostModel,
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-    """Return ``(candidate_thresholds, total_cost)`` over every achievable operating point.
+) -> CostCurve:
+    """Return every achievable operating point, with cost and captured value at each.
+
+    Phase 6 needs the value-capture curve alongside the cost curve, because the two can
+    disagree: a model that misses more frauds while missing *cheaper* ones moves down the
+    count axis and up the value axis at once. That disagreement is the whole subject of the
+    causal cost layer, so both vectors are returned rather than one being recomputed.
 
     Computed by sorting once and walking cumulative sums rather than by re-scoring the split
     at each candidate: an 88k-row validation split has ~88k distinct scores, and the naive
@@ -270,9 +307,13 @@ def _cost_curve(
 
     # Prepend the flag-nothing operating point, whose cost is every fraud missed.
     flag_nothing_cost = total_positive_amount + total_positives * model.chargeback_fee
-    thresholds = np.concatenate(([np.inf], sorted_scores[is_boundary]))
-    costs = np.concatenate(([flag_nothing_cost], cost[is_boundary]))
-    return thresholds, costs
+    return CostCurve(
+        thresholds=np.concatenate(([np.inf], sorted_scores[is_boundary])),
+        costs=np.concatenate(([flag_nothing_cost], cost[is_boundary])),
+        caught_value=np.concatenate(([0.0], caught_amount[is_boundary])),
+        flagged=np.concatenate(([0.0], flagged[is_boundary].astype(np.float64))),
+        total_positive_value=total_positive_amount,
+    )
 
 
 def choose_threshold_by_cost(
@@ -291,9 +332,9 @@ def choose_threshold_by_cost(
         which is a real and reportable outcome — it means the model cannot separate well
         enough to pay for its own review queue under these assumptions.
     """
-    thresholds, costs = _cost_curve(labels, scores, amounts, model)
-    best = int(np.argmin(costs))
-    threshold = float(thresholds[best])
+    curve = cost_curve(labels, scores, amounts, model)
+    best = int(np.argmin(curve.costs))
+    threshold = float(curve.thresholds[best])
     return threshold, cost_at_threshold(labels, scores, amounts, threshold, model)
 
 
@@ -419,3 +460,115 @@ def render_sensitivity(rows: Sequence[SensitivityRow], title: str) -> str:
             f"{100 * row.estimate.flag_rate:>8.2f}%"
         )
     return "\n".join(lines)
+
+
+#: The card-not-present regime: a false positive priced as a lost customer rather than as a
+#: few minutes of analyst time, and a false negative carrying a dispute-handling cost an order
+#: of magnitude above the bare network fee. Published CNP figures cluster here.
+#:
+#: Reported alongside the project defaults rather than replacing them. Every cost number in
+#: Phases 2-5 is on the default basis, and silently moving the basis would make this phase's
+#: figures look like an improvement on numbers they are not comparable to.
+CNP_REVIEW_COST = 50.0
+CNP_CHARGEBACK_FEE = 500.0
+
+
+def cnp_cost_model() -> CostModel:
+    """Return the card-not-present cost regime, for the sensitivity section."""
+    return CostModel(review_cost=CNP_REVIEW_COST, chargeback_fee=CNP_CHARGEBACK_FEE)
+
+
+@dataclass(frozen=True)
+class ValueRecall:
+    """What one operating point captures, by count and by value.
+
+    The two diverge, and the divergence is the point. A model can miss *more* frauds than a
+    rival and still cost less by missing cheaper ones, so a count-recall comparison on its own
+    can rank two models in the opposite order to what they cost.
+
+    Attributes:
+        threshold: The operating point.
+        flag_rate: Share of scored rows flagged.
+        caught_value: Fraud value captured.
+        total_value: Fraud value available.
+        confusion: Counts at this threshold.
+        estimate: The cost of this operating point.
+    """
+
+    threshold: float
+    flag_rate: float
+    caught_value: float
+    total_value: float
+    confusion: "ConfusionMatrix"
+    estimate: CostEstimate
+
+    @property
+    def recall_by_value(self) -> float:
+        """Return the share of fraud *value* captured."""
+        return self.caught_value / self.total_value if self.total_value else 0.0
+
+    @property
+    def missed_value(self) -> float:
+        """Return the fraud value that got through."""
+        return self.total_value - self.caught_value
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the registry shape."""
+        return {
+            "threshold": self.threshold,
+            "flag_rate": round(self.flag_rate, 6),
+            "precision": round(self.confusion.precision, 6),
+            "recall": round(self.confusion.recall, 6),
+            "recall_by_value": round(self.recall_by_value, 6),
+            "caught_fraud_value": round(self.caught_value, 2),
+            "missed_fraud_value": round(self.missed_value, 2),
+            "confusion_matrix": self.confusion.to_dict(),
+            "cost_per_1000": round(self.estimate.cost_per_1000_units, 2),
+        }
+
+
+def value_recall_at_threshold(
+    labels: npt.NDArray[np.bool_],
+    scores: npt.NDArray[np.float64],
+    amounts: npt.NDArray[np.float64],
+    threshold: float,
+    model: CostModel,
+) -> ValueRecall:
+    """Return count recall, value recall and cost at one operating point.
+
+    Lifted out of the Phase 5 driver, where it was a local block inside the run function.
+    Phase 6 compares three ranking policies on exactly these quantities, and a metric computed
+    twice in two places is a metric that can disagree with itself.
+    """
+    from app.ml.evaluation import confusion_at_threshold
+
+    flagged = scores >= threshold
+    return ValueRecall(
+        threshold=threshold,
+        flag_rate=float(np.mean(flagged)) if flagged.size else 0.0,
+        caught_value=float(np.sum(amounts[labels & flagged])),
+        total_value=float(np.sum(amounts[labels])),
+        confusion=confusion_at_threshold(labels, scores, threshold),
+        estimate=cost_at_threshold(labels, scores, amounts, threshold, model),
+    )
+
+
+def value_recall_at_flag_rate(
+    labels: npt.NDArray[np.bool_],
+    scores: npt.NDArray[np.float64],
+    amounts: npt.NDArray[np.float64],
+    max_flag_rate: float,
+    model: CostModel,
+) -> ValueRecall:
+    """Return the same, at the threshold flagging ``max_flag_rate`` of scored rows.
+
+    The matched-flag-rate view. Two models compared at their own thresholds are two products
+    with different staffing costs; matched to the same review capacity, the comparison is
+    about ranking quality alone.
+
+    **The threshold is a quantile of the scores it is applied to.** That is what makes the flag
+    rates comparable, and it is why a matched-flag-rate table selects nothing and must be
+    reported only after the shipped operating points have been fixed on validation.
+    """
+    threshold = threshold_for_flag_rate(scores, max_flag_rate)
+    return value_recall_at_threshold(labels, scores, amounts, threshold, model)

@@ -92,3 +92,32 @@ an engineered per-row vector; Tier-3 reads graph topology, and what changes its 
 edge rule, the entity degree cap and the window — none of which the Phase 1 feature store
 knows about. Sharing the `fv_` namespace would imply the two identify the same space in an
 audit row when they do not.
+
+## Causal cost entries evaluate a decision, not a score
+
+Added in Phase 6, following the precedent Tier-3 set. Tiers 1 and 2 evaluate a transaction and
+an account; Tier-3 evaluates a ring. The cost layer evaluates a **decision** — the same
+transactions as Tier-1, but the object being scored is the choice to block or allow, and its
+quality is measured in money rather than in rank. A `causal_cost` entry therefore carries
+`"unit_of_analysis": "decision"` and nests:
+
+- `policies` — all three ranking strategies (`probability`, `plug_in`, `learned_loss`), each
+  with its own `heldout_test`, its matched-flag-rate view and its cost-optimal point. The
+  losers stay here rather than being dropped, per section 4.
+- `cost_reduction_vs_baseline` — the headline. A cost difference **with a bootstrap interval**,
+  which is what Phase 5's equivalent lacked, plus the value-recall difference that drives it.
+  Its `verdict` field reads `TIE` whenever the interval includes zero, and that verdict is
+  written by the run rather than chosen afterwards.
+- `ope_validation` — off-policy estimator biases against exactly-computed truth. **Its
+  `caveat` field is not optional**: the logging policy is simulated, because neither corpus
+  records a historical action, and nothing here is a causal effect measured on this data.
+- `sensitivity` and `cnp_regime` — how far the recommendation moves under other cost
+  assumptions. The headline stays on the project default cost model so that Phase 6 figures
+  remain comparable with Phases 2-5; the card-not-present regime is reported beside it and
+  selects nothing.
+
+**`feature_version` on a causal cost entry is Tier-1's own `fv_` hash, deliberately.** The loss
+regression reads exactly the columns Tier-1 reads — `amount_log` is already among them, and raw
+`amount` is on the deny list for both — so it identifies the same input space and must not mint
+a second hash implying otherwise. Amount reaches the arithmetic outside the model, where it is
+legitimately known before the decision.

@@ -352,6 +352,163 @@ resolved by "latest" — Tier-3 has sixteen registry entries and picking one by 
 Phase 4 hazard. Artefacts are XGBoost JSON plus a plain-JSON sidecar carrying the selected iteration
 and the two calibrator parameters; nothing in the load path unpickles.
 
-## Tier-2, Tier-3, causal cost
+## Causal cost layer — cost-aware decisioning (Phase 6)
 
-Not yet built. Phases 3, 4, 5 and 6 respectively.
+`causal_cost.py` + `ml/ope.py`. Consumes Tier-1's score, Platt-recalibrated on V-fit; every threshold
+chosen on V-late. Ships a `plug_in` policy that ranks by **expected cost saving** rather than by
+probability.
+
+### There is no treatment variable, and that determines what this layer is
+
+The phase brief asked for IPW on historical actions. Neither corpus records one: IEEE-CIS has no
+decision/decline/review/dispute column across its 394 + 41 columns, and PaySim's `isFlaggedFraud` is a
+deterministic simulator rule firing on 16 of 6.36M rows, nested inside the label, already dropped by
+the pipeline. Every transaction here was allowed. **No causal effect is recovered and none is claimed.**
+
+What follows is provable rather than regrettable. Under the stated cost model both potential outcomes
+are deterministic given `(label, amount)`, so
+
+```
+tau(x) = (1 - p(x)) * r  -  p(x) * (A + f)
+```
+
+has every term either known at decision time or equal to `p(x)`. **The DR-Learner collapses exactly
+onto a cost-weighted plug-in.** Two consequences, both measured: the break-even threshold becomes
+per-transaction (`p > r/(A+f+r)`), and the only place learning could still help is regressing realised
+loss directly — which `learned_loss` does, and which the run tests rather than assumes.
+
+The DR machinery is kept for **off-policy evaluation against a simulated logging policy**, where the
+true policy cost is exactly computable and the estimators can be validated rather than trusted.
+
+### Results — IEEE-CIS, held-out test (n=88,581, positives=3,083, base rate 3.4804%)
+
+All three policies rank the same calibrated probability, matched to a 1% flag rate:
+
+| policy | precision | recall (count) | recall (**value**) | cost per 1,000 |
+|---|---:|---:|---:|---:|
+| `probability` (Tier-1 baseline) | 0.8646 | 0.2485 | 0.1500 | 4,902.49 |
+| **`plug_in`** (shipped) | 0.4955 | 0.1424 | **0.3698** | **3,804.02** |
+| `learned_loss` | 0.5056 | 0.1453 | 0.3453 | 3,932.14 |
+
+Paired bootstrap intervals, threshold re-derived inside each resample:
+
+| comparison | cost delta / 1,000 | 95% CI | verdict |
+|---|---:|---:|---|
+| `plug_in` vs `probability` | −1,098.48 (**−22.41%**) | [−1,345.28, −881.81] | cheaper, excludes zero |
+| `learned_loss` vs `probability` | −970.35 (−19.79%) | [−1,189.92, −769.45] | cheaper, excludes zero |
+| `learned_loss` vs `plug_in` | +128.13 (+3.37%) | [−30.41, +300.03] | **TIE** |
+
+Two findings, and the second is the more interesting one.
+
+**Cost-aware ranking wins by a large margin — though note what the comparison does and does not
+establish.** At a fixed flag budget, ranking by `tau(x)` is the Bayes-optimal selection for exactly the
+cost function used to score it, given a calibrated `p`. So this measures *how large* the gain is on this
+corpus and *whether the calibration holds* (ECE 0.0057 says it does) — not *whether* cost-aware ranking
+works, which the collapse proof already settles. Count recall *falls* by 43% while value recall rises by
+147%: it is not detecting more fraud, it is detecting more expensive fraud. That mechanism is also the evidence it is not a leak: PR-AUC drops to
+0.3194, nowhere near the 0.95 suspicion wire.
+
+**Cost-sensitive *training* buys nothing over cost-sensitive *thresholding*.** `learned_loss` ties the
+plug-in — the interval includes zero and its point estimate is on the wrong side. This is the question
+`BUILD_LOG` handed the phase, and the answer is what the collapse proof predicts: given a calibrated
+probability, the plug-in is already the right combination, and fitting a second model to reach it adds
+estimation error without adding information.
+
+### The headline is regime-dependent — read this before quoting 22%
+
+The advantage falls to **−2.22%**, CI [−582.18, −145.50] per 1,000, under a card-not-present cost
+model (FP 50, FN amount+500). Note what that says and does not say: the interval still excludes zero,
+so cost-aware ranking is *genuinely* cheaper under CNP pricing too — but the effect is an order of
+magnitude smaller, and the same pre-registered tie rule is applied to this number as to the headline
+rather than only to the one that flatters the phase.
+
+The mechanism is arithmetic. Value-weighting can only exploit the share of false-negative cost that
+*varies* between transactions. At a 15.00 fee against a median test amount of 68.50 that share is
+82.0%; at a 500.00 fee it is 12.0% — the flat fee dominates, every miss costs roughly the same, and
+cost ranking collapses most of the way back toward probability ranking.
+
+So the honest claim is conditional: **cost-aware ranking pays in proportion to how heterogeneous the
+loss is.** Which regime a payments business is in is a question about its own chargeback economics,
+not something this corpus answers.
+
+### Is the cost advantage circular?
+
+The obvious objection: if the policy ranks by `p·(A+f)` and fraud correlates with amount on this
+corpus, is it just re-using the amount as a hidden risk signal? Worth answering plainly.
+
+Amount reaches every model here as the engineered `amount_log`, which **is** a live Tier-1 feature —
+the raw `amount` and `TransactionAmt` columns sit on the deny list only because they are exact
+duplicates of it, monotone and so giving a tree identical splits. Nothing is withheld and nothing is
+smuggled in. It is not leakage, because the amount is known before the decision is made, which is
+precisely what makes it usable in the cost arithmetic at all.
+
+The decisive evidence is the direction of the metrics: count recall **falls** 0.2485 → 0.1424. A
+policy exploiting amount as a hidden risk signal would catch *more* fraud, not less. This one catches
+fewer frauds and more money, which is exactly what the cost function asked for.
+
+### Calibration
+
+Expected calibration error 0.005725, Brier 0.022601, on test. This matters more here than in Phase 5:
+every figure this layer emits is a probability multiplied by an amount, so calibration error
+propagates directly into cost and moves every break-even threshold with it.
+
+### Off-policy estimator validation
+
+Against a **simulated** logging policy whose propensity is known by construction, with truth computed
+exactly from the labels. On the shipped policy: direct method −8.66% bias, IPW +2.19%, doubly robust
++1.35%. Read carefully — a correct propensity makes IPW unbiased by construction, so this establishes
+that the estimators are implemented correctly and recover a known answer. It cannot establish which
+would win where the propensity must be estimated, which is the case that matters in deployment and is
+not testable on data with no logged actions at all.
+
+### What this does NOT catch
+
+From the false negatives actually observed at the shipped operating point, and regenerated by the run
+— unlike the Phase 5 section above, which was computed by hand and goes stale on retraining:
+
+- **High-value fraud that Tier-1 scores as ordinary.** The five costliest misses carry amounts from
+  3,076.97 down to 1,504.47 at probabilities of 0.0108, 0.0226, 0.0268, 0.0096 and 0.0041 — every one
+  of them an order of magnitude below the ~0.035 median break-even. Even multiplied by a large amount,
+  a probability that low does not clear the bar. Value weighting reprioritises what Tier-1 already
+  suspects; it cannot rescue what Tier-1 scored as clean. Note the second pattern in those rows: three
+  of the five come from accounts with an established history (2, 2 and 12 prior transactions) and no
+  new device or address, so the signals Tier-1 leans on are all absent.
+- **It improves no detection whatever.** Every policy reads the same Tier-1 probability. This layer
+  changes which flagged transactions are worth a queue slot, and nothing else.
+- **It spends count recall to buy value recall.** Recall falls 0.2485 → 0.1424 on 3,083 positives:
+  true positives drop 766 → 439, so **327 more frauds per 88,581 transactions get through**. They are
+  the cheap ones, and that is the trade the cost function asked for — but it is the largest single
+  downside of the shipped policy, and a business with a regulatory or reputational *count* target
+  rather than a loss target should not ship this.
+- **Its advantage shrinks as the chargeback fee dominates the amount** — see the regime section above.
+- **It prices `review` and `block` identically.** Both put a transaction in front of a human, but a
+  hard decline damages a customer relationship in a way a review does not, and this model cannot see
+  the difference.
+- **Review capacity is a hard count cap and cost is linear in mistakes.** No queue congestion, no
+  churn from repeated false declines, no recovery on disputed fraud. All three would raise the true
+  cost of a false positive.
+
+### Baselines kept, not discarded
+
+- **`probability` ranking** — Tier-1's own behaviour, PR-AUC 0.5276, cost 4,902.49 per 1,000. It wins
+  every count-based metric and loses on cost.
+- **`learned_loss`** — a LightGBM Tweedie regression on realised loss over Tier-1's exact feature set.
+  Ties the plug-in; not shipped. Its reported figures come from a single train-fitted booster scoring
+  test, which is correct; a five-block forward-chaining out-of-fold column is also computed but is only
+  a coverage diagnostic and feeds no reported number.
+- **The unconstrained cost optimum** is reported beside the capacity-capped point, never instead of
+  it: it flags 23.1% of traffic at 1,135.79 per 1,000, which no review queue could absorb.
+
+### Reproducibility
+
+Seed 42, logged. `python -m app.models.train_cost_learner`. The artefact is a plain-JSON sidecar
+carrying the threshold, the cost model and its assumptions; the shipped `plug_in` policy holds no
+booster, so nothing in its load path unpickles. One caveat: `LOSS_PARAMS` enables bagging and feature
+sampling, both of which draw against row position, so a run is reproducible given the same parquet but
+not invariant to a permutation of it.
+
+## Tier-2 and Tier-3
+
+Documented in `notebooks/tier2_report.md` and `notebooks/tier3_report.md`, and in the registry. Both
+were built — Phases 3 and 4 — and both were retired by the Phase 5 ablation. Neither reaches the
+shipped meta-learner, and neither is consumed by the cost layer.

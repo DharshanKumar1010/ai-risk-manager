@@ -1168,3 +1168,319 @@ current one, generated from the registry rather than hardcoded.
 - Phase 7 must honour four carried security gates: routes need auth; the `audit_log` table needs RLS
   forced and a `top_features` column; a Redis limiter must fail closed; and `POST /score` must **not**
   return `top_features` — `MetaResult.public()` exists for exactly that.
+
+## Phase 6 — Causal Cost Layer
+
+**Status:** Shipped. `plug_in` cost-aware ranking is **22.41% cheaper** than Tier-1's probability
+ranking at a matched 1% flag rate, CI [−1,345.28, −881.81] per 1,000, excluding zero. The phase's
+secondary hypothesis — that cost-sensitive *training* beats cost-sensitive *thresholding* — was
+tested directly and **came back a tie**, which is exactly what this phase's own algebra predicted.
+The bootstrap for a cost difference that Phase 5 recorded as missing now exists and is what the
+headline rests on.
+
+**All three gates ran and returned 17 findings; 16 were fixed and one was escalated for a decision.**
+Two were metric bugs that would have shipped as published numbers, and one was a selectively-applied
+honesty rule. Unlike Phase 5, whose `ml-evaluator` gate never returned a clean round, nothing here was
+left open — the detail is in the gate section below, and it is the most useful part of this entry.
+
+**The brief's central instruction was not executable, and finding out why produced the phase.** It
+asked for IPW on historical actions. There are none. That is not a data-quality complaint — it
+determines what a causal cost layer on this corpus can be, and the answer turned out to be more
+interesting than the original plan.
+
+### The instruction that could not be followed
+
+Checked against raw headers rather than assumed. IEEE-CIS carries 394 transaction columns and 41
+identity columns; none is a decision, decline, review, dispute, chargeback or refund. `M1`–`M9` are
+Vesta address-match flags, not review outcomes. PaySim carries exactly one action-like column,
+`isFlaggedFraud`, and it fails three independent ways: it is the simulator's own hardcoded rule
+(single TRANSFER above 200,000), so propensity is exactly 0 or 1 and `1/e(x)` is undefined; it is
+nested inside the label, so the treated arm has no control counterfactual; and it fires on 16 rows
+out of 6,362,620. `app/data/adapters.py:339` already drops it as "a leaked downstream decision".
+
+Every transaction in this project's data was allowed. An ATE recovered from it would have been a
+fabrication, and `PHASE_PROMPTS.md:345` had in fact already anticipated this by asking for a DR-Learner
+"on a synthetic cost model" — a simulated treatment, not a recovered one.
+
+### What replaced it, and why it is stronger
+
+Under the stated cost model both potential outcomes are deterministic given `(label, amount)`:
+
+```
+cost(block | Y) = (1 - Y) * r          cost(allow | Y) = Y * (A + f)
+tau(x) = (1 - p(x)) * r  -  p(x) * (A + f)
+```
+
+Every term is either known before the decision or is `p(x)`. There is no confounding for a doubly
+robust correction to remove because there is no treatment whose assignment could be confounded. **The
+DR-Learner does not fail here, it collapses** — provably and exactly — onto a cost-weighted plug-in
+driven by a calibrated probability. The proof is in the `causal_cost` module docstring and asserted by
+`test_break_even_threshold_is_the_root_of_the_treatment_effect`, so it cannot rot into a comment.
+
+Two things follow. The block threshold stops being global and becomes `p > r/(A+f+r)`, which moves
+with the amount — across the test split it spans 0.000557 to 0.162171, median 0.034682. And the one
+place learning could still add something is regressing realised loss directly instead of reaching it
+through `p(x)·(A+f)`. That is `learned_loss`, and the run measured it rather than assuming it.
+
+The DR machinery was kept for **off-policy evaluation against a simulated logging policy**, where
+truth is exactly computable from the labels and the estimators can therefore be *validated*. On the
+shipped policy: direct method −8.66% bias, IPW +2.19%, DR +1.35%. Stated plainly in the report: a
+correct propensity makes IPW unbiased by construction, so this shows the estimators are implemented
+correctly, and cannot show which wins when the propensity must be estimated.
+
+### The result
+
+At a matched 1% flag rate on held-out test (n=88,581, positives=3,083):
+
+| policy | precision | recall (count) | recall (**value**) | cost / 1,000 |
+|---|---:|---:|---:|---:|
+| `probability` (Tier-1) | 0.8646 | 0.2485 | 0.1500 | 4,902.49 |
+| `plug_in` (shipped) | 0.4955 | 0.1424 | **0.3698** | **3,804.02** |
+| `learned_loss` | 0.5056 | 0.1453 | 0.3453 | 3,932.14 |
+
+| comparison | cost delta / 1,000 | 95% CI | verdict |
+|---|---:|---:|---|
+| `plug_in` vs `probability` | −1,098.48 (−22.41%) | [−1,345.28, −881.81] | excludes zero |
+| `learned_loss` vs `probability` | −970.35 (−19.79%) | [−1,189.92, −769.45] | excludes zero |
+| `learned_loss` vs `plug_in` | +128.13 (+3.37%) | [−30.41, +300.03] | **TIE** |
+
+The baseline row reproduces Phase 2 and Phase 5 exactly — PR-AUC 0.5276, value recall 0.1500, cost
+4,902.49 against Phase 5's 4,903.53 — which is the cross-phase consistency check that makes the rest
+believable.
+
+**Count recall falls 43% while value recall rises 147%.** It is not finding more fraud; it is finding
+more expensive fraud. That is also the argument against a leak: PR-AUC *drops* to 0.3194, nowhere near
+the 0.95 suspicion wire, and a leak does not lower your ranking metric.
+
+**The tie is the more interesting finding.** Cost-sensitive training buys nothing over cost-sensitive
+thresholding here, and the collapse proof says why: given a calibrated probability, the plug-in is
+already the correct combination of the quantities, so fitting a second model to reach the same target
+adds estimation error and no information. `BUILD_LOG:391` asked for exactly this comparison and the
+answer is negative — recorded, not buried.
+
+### The headline is regime-dependent, and that is the caveat that matters most
+
+Under a card-not-present cost model (FP 50, FN amount+500) the 22.41% advantage falls to **−2.22%, CI
+[−582.18, −145.50]** per 1,000. The interval still excludes zero — so cost-aware ranking is genuinely
+cheaper under CNP pricing as well, just by an order of magnitude less. The tie rule is applied to this
+number too, because applying it only to the figure that flatters the phase would be selective; the
+ml-evaluator gate caught precisely that omission.
+
+The mechanism is arithmetic, not noise: value weighting can only exploit the share of false-negative
+cost that *varies* across transactions. At a 15.00 fee against a median test amount of 68.50 that
+share is 82.0%; at a 500.00 fee it is 12.0%, the flat fee dominates, every miss costs about the same,
+and cost ranking collapses most of the way back toward probability ranking.
+
+The honest claim is therefore conditional — **cost-aware ranking pays in proportion to how
+heterogeneous the loss is** — and the report computes both figures rather than quoting the flattering
+one. This is written into the registry notes as well, so the number cannot travel without it.
+
+### Obstacles
+
+- **The no-treatment finding itself.** Cost roughly half a day to establish properly: raw CSV headers,
+  `raw_spec.py` column assertions, the adapter drop, and a cross-tab of `isFlaggedFraud` over all
+  6.36M PaySim rows to confirm 16 positives and zero treated-negatives. Worth every minute — building
+  the originally-specified IPW layer would have produced confident numbers that meant nothing.
+- **`CostEstimate` name collision.** The brief specifies `estimate_cost(...) -> CostEstimate`, but
+  `app.ml.cost.CostEstimate` already exists as a *population-level* type imported by all four training
+  drivers. The per-decision type is `DecisionCost`; the deviation from the brief is documented at the
+  class.
+- **econml was reserved for this phase and deliberately not adopted.** Its published pins cap
+  scikit-learn below 1.6 and numpy below 2 against this repo's 1.9 / 2.4 / pandas 3.0;
+  `filterwarnings = ["error"]` turns any import-time deprecation into a collection failure, which is
+  exactly how `shap` became a declared-but-unusable dependency; and its folds are random, where this
+  data needs chronological ones. The DR/AIPW estimators are ~40 lines of numpy in `app/ml/ope.py`,
+  fully typed under mypy strict, and testable against exact truth. `requirements.txt` records the
+  reasoning where the next person will look for it.
+- **`fit_loss_model` recorded `chargeback_fee=0.0`** instead of the fee its target was built with — a
+  model that would be meaningless read against any other fee. Caught by the test written to pin that
+  field, which is the argument for writing it.
+- **Every flag rate in the sensitivity tables rendered as `0.00%`.** Reconstructing `SensitivityRow`
+  from its own `to_dict()` dropped `rows` and `flagged`, and `flag_rate` is derived from them. Caught
+  by reading the smoke output rather than by a test. Fixed by carrying the real objects for rendering
+  and the dicts for the registry.
+- **A confusion matrix and a cost block from two different operating points, inside one result.** The
+  shipped result rendered its matrix at the V-late threshold (1,203 rows flagged) and its cost at the
+  test 1% quantile (886 flagged). Both numbers were individually correct and the block was a
+  self-contradiction. Found by reading run 1's own output and checking that `fp + tp` matched the
+  cost block's `flagged`; it would otherwise have shipped. Both now come from the shipped threshold,
+  and the report explains why the shipped flag rate is 1.36% rather than exactly 1%.
+- **`learned_loss` vs `plug_in` needed its own interval.** Both were originally compared only against
+  `probability`. Reading "the loss regression adds nothing" off two overlapping intervals that share a
+  baseline is not a valid comparison. Added after run 1 showed the two were close — disclosed here
+  because the ordering matters, and noting that the added test could only *weaken* the phase's
+  secondary claim, which it duly did.
+- **Two test failures that were the tests' fault, not the code's**, both verified before changing
+  anything. The forward-chaining test shuffled `event_time`, but `time_blocks` recomputes the
+  assignment from whatever times it is handed, so no violation was ever planted; it now plants one at
+  `assert_forward_chaining` directly, where the guard actually lives. The cheaper-policy test used a
+  barely-informative probability, so multiplying by an independent amount added more noise than
+  signal — which is itself a real property of the method and is now stated in the test.
+- **`TaskStop` kills the shell, not the Python child.** Two runs believed stopped ran to completion
+  and appended registry entries; three duplicate `causal_cost` entries and their artefacts were found
+  by `git status` before any commit. All were uncommitted, so `git checkout HEAD -- models/registry.json`
+  restored the record. Nothing discarded ever entered project history, and the append-only contract
+  holds. The one benefit: three independent runs produced byte-identical results, which is a free
+  determinism check on the seed.
+
+### The gate round — 17 findings, 16 fixed, 1 escalated
+
+All three gates ran (`/code-review high`, `ml-evaluator`, `security-reviewer`). Unlike Phase 5, whose
+gate never returned a clean round, every finding here was either fixed or explicitly decided. The two
+that mattered most were metric bugs that would have shipped as published numbers.
+
+**The sensitivity sweep was evaluating a policy nobody ran.** `plug_in` ranks by
+`p*(A+f) - (1-p)*r`, so the score *embeds* both cost parameters. `sensitivity_sweep` scaled the cost
+model but reused the scores computed at 1.0x, which re-thresholds the original policy against a
+different cost function rather than evaluating the scaled one. This was safe in Phases 2-5 — there the
+score is a probability and carries no cost inside it — and is the kind of bug that a shared helper
+inherits silently when the thing being swept changes character. The score is now recomputed under each
+scaled model in `scores_under`.
+
+**The card-not-present row for `learned_loss` priced a fee-15 model at fee-500.** The Tweedie target
+was `Y*(A+15)`, so under a different fee the prediction needs correcting by `(f2-f)*p`.
+`LossModel.chargeback_fee` was recorded for exactly this check and was never consulted, so the row was
+not the policy it claimed to be. Same helper, same fix.
+
+**The tie rule was being applied selectively.** The headline carried an interval; the number that
+*qualifies* the headline — the card-not-present advantage — was a bare point estimate. Applying a
+pre-registered honesty rule only to the figure that flatters the phase is exactly the failure the rule
+exists to prevent, and the gate was right to call it. With the interval computed, CNP comes out at
+**−2.22%, CI [−582.18, −145.50]**: still excluding zero, so genuinely cheaper, but an order of
+magnitude smaller than the headline. Worth recording that the sampled smoke run showed this as a tie
+and the full test split did not — a 15k sample has nowhere near the power to resolve a 2% cost
+difference, which is its own argument against reading anything off `--sample` output.
+
+**A figure in "what this does NOT catch" was wrong by 3.3x, in the flattering direction.** The README
+said "roughly 100 more frauds get through"; true positives fall 766 → 439, so it is **327**. In the one
+section whose entire purpose is to be unflattering.
+
+**`format_threshold` was a self-inflicted regression.** The `%.6e` fallback added earlier this phase to
+fix Phase 5's `%.6f` collapse is *less* faithful than what it replaced for any threshold above 10 —
+90.85343882831513 renders as `9.085344e+01`, a round-trip error of 1.2e-6 against `%.6f`'s 1.7e-7. Six
+significant digits is not enough for a cost-scale threshold, and the fix for "not enough digits" is
+more digits, not a different exponent. Now: fixed notation when it round-trips exactly, `repr`
+otherwise.
+
+Also fixed: a confusion matrix and cost estimate sourced from different cuts inside one registry key
+(`cost_per_transaction`, now split into two explicitly-named keys); missing raw TN/FP/FN/TP and
+thresholds on the headline matched-flag-rate table; two sensitivity tables computed on V-late and
+rendered with no split label inside a test report; the audit-extremes section citing the shipped
+threshold while being computed at the matched one; `estimate_cost` silently falling back to the plug-in
+for a `learned_loss` policy while `ranking_score` raised; an unbounded `amount` where a negative value
+would invert the ranking score and switch blocking off for that row; and the Tweedie booster never
+reaching disk despite the registry advertising a full `loss_model` block.
+
+### Security: two disclosure findings, one escalated rather than decided
+
+**`DecisionCost.to_dict` was contracted as an API shape and is a complete evasion oracle.** The sign of
+`expected_saving_from_blocking` *is* the decision boundary; with the probability and the two cost arms
+a caller recovers the whole cost matrix and can binary-search the largest amount that evades review at
+a given risk score. `app/core/audit.py` already carries this warning on `top_features`, and this object
+is strictly worse — `top_features` says which features mattered, this says how far from the boundary
+you are and which way to move. Renamed to `to_audit_dict` with the constraint stated at the method, and
+Phase 7's carried gate is widened from "must not return `top_features`" to "must not return any field
+of `DecisionCost`".
+
+**A real control gap, unrelated to this phase but found by its review.** `.trufflehog-exclude` carried
+an unanchored `/data/`, which matches `/src/backend/app/data/` as readily as the intended `/src/data/`
+— exempting ten application source files from the *blocking* secret scan, directly under a comment
+reading "Never application source". No secret was present, so this was a blind spot rather than a leak.
+Anchored to `^/src/data/` and verified in both directions.
+
+**The one finding escalated rather than decided.** The reviewer argued that publishing the shipped
+threshold and the cost constants in tracked files lets an adversary solve
+`A <= (90.853 + 3(1-p))/p - 15` for the largest amount that evades review at any risk score, and
+recommended moving them to a gitignored sidecar. That directly contradicts ml-evaluation-standards
+section 2, which requires the operating threshold to be stated — two project skills pointing opposite
+ways, with the resolution depending on facts the code cannot settle (is the repo public, will the model
+serve traffic). Escalated. **Decision: keep the thresholds and cost constants, drop the worked
+examples.** The exploit has no live target — there is no endpoint, and IEEE-CIS is public data — while
+a judge who cannot see the operating point cannot verify the headline. But the ten identified
+transactions with their exact probabilities and features were adding attacker value and were required
+by nothing, so `audit_extremes` no longer reaches the registry and `transaction_id` no longer appears
+anywhere in the driver. The aggregate failure modes stay in the report and README, which is what
+section 4 actually asks for.
+
+**Carried, not fixed:** RLS is defined but inert, because `docker-compose.yml` connects as the table
+owner and superusers bypass row-level security unconditionally. Pre-existing, acknowledged in the
+migration's own docstring, not reachable today because no code path reads those tables. Phase 7 must
+grant login to `riskiq_app` and repoint `DATABASE_URL` before merging any read route.
+
+### Carried Phase 5 traps, both closed
+
+- `EvaluationResult.render` hardcoded `"(chosen on validation by ...)"` for every caller, which made
+  criteria that were *not* chosen on validation read as self-contradictory. Callers now supply the
+  full phrase.
+- Thresholds formatted at `%.6f` printed Phase 5's 0.00175-wide review/block band as two identical
+  strings and Tier-3's 0.999995 as `1.000000`. `format_threshold` now round-trips and falls back to
+  scientific notation when fixed notation would lose a digit; `test_format_threshold_does_not_collapse_distinct_values`
+  pins it using the actual Phase 5 pair.
+
+### Test discipline, stated plainly
+
+**Test was scored by five completed runs, and that number should be stated rather than rounded down.**
+One was discarded for the operating-point bug, two were orphans (`TaskStop` kills the shell but not the
+Python child, so two runs believed stopped ran to completion and appended registry entries), one was
+discarded after the gates, and the last is the one that stands. Every one used seed 42 and identical
+selection logic, and the three that overlapped produced byte-identical figures — which is a free
+determinism check, and the reason the repeats cost nothing in validity.
+
+**Nothing on test selected anything, in any run.** Every threshold was chosen on V-late; the calibrator
+was fitted on V-fit; the loss regression early-stopped on V-fit; `plug_in` was fixed as the headline by
+the collapse proof rather than by a comparison. The changes between runs were correctness fixes, report
+labelling, and two added comparisons — no model, threshold or hyperparameter moved, and the headline
+`−1,098.48 / CI [−1,345.28, −881.81]` is identical across every run that produced it.
+
+**Two comparisons were added after seeing test output, and both could only weaken the phase's claims.**
+The `learned_loss` vs `plug_in` interval was added when run 1 showed the two were close; it returned a
+tie, retiring the phase's secondary hypothesis. The card-not-present interval was added because the
+gate pointed out the tie rule was being applied selectively; it returned a significant but ten-times-
+smaller advantage, which narrows the headline's scope. Adding a test that can only cost you something
+is not the failure mode the rule guards against, but the ordering is disclosed because it is the
+reader's call, not the author's.
+
+**Every discarded registry entry was uncommitted.** `HEAD` carried 26 entries throughout; the working
+tree was restored with `git checkout HEAD -- models/registry.json` each time and orphaned artefacts
+deleted. The append-only contract holds: nothing discarded ever entered project history.
+
+The `--sample` runs used for iteration wrote to a scratchpad with `--skip-registry` and touched no
+reported figure. One lesson from them, recorded because it nearly misled this entry: a 15k sample
+showed the card-not-present comparison as a tie, and the full split showed it excluding zero. Sampled
+output is for shaking out crashes, not for reading results.
+
+Suite: 442 passed, 1 skipped (database unavailable, pre-existing), up from 395 — 47 of them this
+phase, including a regression test pinning the exact invariant that caught the operating-point bug.
+`ruff` and `mypy --strict` clean across 48 source files.
+
+### Known gaps
+
+- **The cost model is still assumption, not measurement.** Review cost 3.00 and chargeback fee 15.00
+  are stated figures. The sensitivity sweeps exist because the recommendation moves with them, and the
+  card-not-present table shows how far.
+- **False-positive cost is flat.** A heterogeneous FP cost — churn probability times customer lifetime
+  value — was considered and rejected: neither churn nor CLV is observable here, and 57.7% of IEEE-CIS
+  accounts have exactly one transaction, so CLV is undefined for most of them. That would have been
+  assumption stacked on assumption.
+- **The bootstrap holds the fraud count fixed** (stratified resampling), so the intervals describe
+  uncertainty in *which* frauds and therefore in their amounts, not in the base rate. On a corpus where
+  cost is dominated by a handful of large transactions this widens them honestly, but it is not a
+  general-purpose cost interval.
+- **`review` and `block` are priced identically.** A hard decline damages a customer relationship in a
+  way a review queue does not, and nothing in this layer can see the difference.
+- **The out-of-fold loss column is computed and then used only for a coverage diagnostic.** Four
+  LightGBM fits over 413k rows for one number in the notes. Defensible as proof the forward-chaining
+  machinery runs on real data, but it is not cheap and nothing downstream consumes it. To be explicit,
+  because the Limitations wording previously invited the wrong inference: **every reported
+  `learned_loss` figure comes from the single train-fitted booster scoring test**, which is the correct
+  construction. None of them rests on the out-of-fold column.
+- **Row order is part of reproducibility.** `LOSS_PARAMS` enables bagging and feature sampling, both of
+  which draw against row position; a permuted parquet fits a different booster. Measured (identical
+  predictions with sampling disabled), documented at the constant, and pinned by
+  `test_out_of_fold_loss_is_reproducible`, which deliberately asserts same-order reproducibility rather
+  than order invariance.
+- **Phase 5's `ml-evaluator` gate still never returned a clean round.** Phase 6 consumes Tier-1
+  directly rather than the meta-learner, which limits the exposure, but the Phase 5 comparison figures
+  quoted in passing inherit it.
+- **Latency was never benchmarked for this layer either.** The cost policy is arithmetic on two
+  floats, so the true cost is Tier-1's, but the registry entry carries no latency block. Phase 10.

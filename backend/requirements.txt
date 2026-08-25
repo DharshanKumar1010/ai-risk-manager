@@ -18,8 +18,18 @@ redis>=5.2,<7.0
 pyjwt>=2.10,<3.0
 
 # --- Data and ML layer -------------------------------------------------------
-# Added in Phase 1 for the feature pipeline. econml arrives with Phase 6; adding it now
-# would inflate the image for code that does not exist yet.
+# Added in Phase 1 for the feature pipeline.
+#
+# econml was reserved for Phase 6 and was deliberately NOT added when Phase 6 shipped. Three
+# reasons, in order of weight. Its published pins have capped scikit-learn below 1.6 and numpy
+# below 2, against this file's sklearn>=1.9, numpy>=2.4 and pandas>=3.0. `filterwarnings =
+# ["error"]` in pyproject turns any import-time deprecation into a collection failure, which is
+# exactly how shap became a declared-but-unusable dependency below. And the cross-fitting here
+# has to be chronological -- econml's folds are random, which on time-ordered transaction data
+# is the leak the whole project is built to avoid.
+#
+# The DR/AIPW estimators are therefore hand-rolled over numpy in app/ml/ope.py, which is ~40
+# lines of arithmetic, fully typed under mypy strict, and testable against exact ground truth.
 #
 # pandas 3.x is the current major: copy-on-write is enforced and string columns are
 # PyArrow-backed by default, which matters directly here — train_transaction.csv is

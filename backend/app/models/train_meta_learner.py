@@ -52,7 +52,7 @@ import pandas as pd
 
 from app.config import Settings, get_settings
 from app.data.raw_spec import SourceDataset
-from app.data.splitting import find_boundary_overlaps
+from app.data.splitting import find_boundary_overlaps, validation_slices
 from app.ml.cost import (
     CostEstimate,
     CostModel,
@@ -135,13 +135,6 @@ MIN_BLOCK_FLAGGED = 50
 #: rather than infinity because the registry entry has to be valid JSON.
 BLOCK_DISABLED = 2.0
 
-#: Chronological cut of the validation split, as fractions of its rows.
-#:
-#: The arbiter measures a *ranking* difference, which is stable across time, so it takes an
-#: early slice. The calibrator and the thresholds are level-sensitive, and the base rate visibly
-#: drifts across this corpus, so they take the slice closest to test.
-VALIDATION_FRACTIONS: tuple[float, float, float] = (0.40, 0.35, 0.25)
-
 #: The registered upstream models this phase fuses. Pinned rather than resolved by "latest",
 #: because Tier-3 has sixteen registry entries and Tier-2 three, and picking the wrong one by
 #: accident is a documented Phase 4 hazard.
@@ -184,78 +177,6 @@ def load_splits(
     return frames
 
 
-@dataclass(frozen=True)
-class ValidationSlices:
-    """Validation cut three ways, each with exactly one job.
-
-    Attributes:
-        fit: Fits the arbiter models, and early-stops the shipped model.
-        arbiter: Where every keep/drop delta is measured. Nothing is fitted on it.
-        late: Calibration and operating thresholds. Closest to test, because both are
-            level-sensitive and this corpus's base rate drifts.
-    """
-
-    fit: pd.DataFrame
-    arbiter: pd.DataFrame
-    late: pd.DataFrame
-
-    def describe(self) -> list[dict[str, Any]]:
-        """Return the slice table for the report."""
-        rows = []
-        for name, frame in (("V-fit", self.fit), ("V-arb", self.arbiter), ("V-late", self.late)):
-            labels = frame["is_fraud"].to_numpy(dtype=bool)
-            rows.append(
-                {
-                    "slice": name,
-                    "rows": len(frame),
-                    "positives": int(labels.sum()),
-                    "base_rate": round(float(labels.mean()), 6) if len(frame) else 0.0,
-                    "first_event": str(frame["event_time"].min()),
-                    "last_event": str(frame["event_time"].max()),
-                }
-            )
-        return rows
-
-
-def validation_slices(
-    validation: pd.DataFrame, fractions: tuple[float, float, float] = VALIDATION_FRACTIONS
-) -> ValidationSlices:
-    """Cut validation chronologically into fit / arbiter / late slices.
-
-    Chronological, never stratified. A stratified cut would mix rows across time and let the
-    calibrator see the same period the arbiter measured on.
-
-    Raises:
-        ValueError: If any slice would be empty or carry no positives -- either makes the slice
-            unable to do its job, and continuing would produce a number that looks fine.
-    """
-    ordered = validation.sort_values("event_time", kind="stable").reset_index(drop=True)
-    rows = len(ordered)
-    first = int(rows * fractions[0])
-    second = first + int(rows * fractions[1])
-    slices = ValidationSlices(
-        fit=ordered.iloc[:first].copy(),
-        arbiter=ordered.iloc[first:second].copy(),
-        late=ordered.iloc[second:].copy(),
-    )
-    for name, frame in (("fit", slices.fit), ("arbiter", slices.arbiter), ("late", slices.late)):
-        if frame.empty:
-            raise ValueError(f"validation slice {name!r} is empty at fractions {fractions}")
-        if not frame["is_fraud"].astype(bool).any():
-            raise ValueError(
-                f"validation slice {name!r} carries no positives; it cannot fit a calibrator, "
-                "choose a threshold or measure a delta"
-            )
-    logger.info(
-        "validation cut: V-fit %d rows / %d pos, V-arb %d / %d, V-late %d / %d",
-        len(slices.fit),
-        int(slices.fit["is_fraud"].sum()),
-        len(slices.arbiter),
-        int(slices.arbiter["is_fraud"].sum()),
-        len(slices.late),
-        int(slices.late["is_fraud"].sum()),
-    )
-    return slices
 
 
 # ==========================================================================================

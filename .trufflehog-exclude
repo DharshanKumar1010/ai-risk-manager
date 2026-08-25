@@ -1,8 +1,13 @@
 # Paths excluded from the trufflehog secret scan.
 #
 # These are Go regexes matched against the FULL path trufflehog sees, which inside the
-# hook container is /src/... — so patterns are deliberately unanchored fragments rather
-# than ^-anchored repo-relative paths.
+# hook container is /src/... .
+#
+# Anything naming a REPO-ROOT directory must be anchored at /src/. An unanchored fragment
+# matches anywhere in the path, and `/data/` silently excluded `/src/backend/app/data/` --
+# ten application source files, including the pipeline and the adapters -- from the blocking
+# secret scan. The comment below said "never application source" while the pattern above it
+# exempted exactly that. Anchor first, then claim it.
 #
 # Build outputs, caches and vendored dependencies only. Never application source.
 node_modules/
@@ -11,8 +16,8 @@ node_modules/
 \.pytest_cache/
 \.git/
 \.venv/
-/data/
-/dist/
-/coverage/
-/htmlcov/
+^/src/data/
+^/src/frontend/dist/
+^/src/frontend/coverage/
+^/src/htmlcov/
 package-lock\.json$

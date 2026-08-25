@@ -27,7 +27,35 @@ import numpy as np
 import numpy.typing as npt
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
-from app.ml.cost import CostEstimate
+from app.ml.cost import CostEstimate, CostModel, cost_at_threshold, threshold_for_flag_rate
+
+
+def format_threshold(threshold: float) -> str:
+    """Render a threshold so that distinct values print distinctly and faithfully.
+
+    ``%.6f`` was the original format and it had two failure modes, both observed. Phase 5
+    shipped a review/block band 0.00175 wide and printed both ends identically; Tier-3's
+    operating threshold of 0.999995 printed as ``1.000000``. A threshold that cannot be read
+    back is not a reported operating point, and ml-evaluation-standards section 2 requires the
+    operating threshold to be stated.
+
+    Fixed notation is kept whenever it round-trips **exactly**, because that is what a reader
+    expects and it covers most thresholds in this project. Anything else falls back to
+    :func:`repr`, which is the shortest representation that reads back as the same double.
+
+    Scientific notation was tried here first and was worse, not better: ``%.6e`` carries six
+    digits after the point regardless of magnitude, so for a threshold of 90.85343882831513 it
+    loses more precision than the ``%.6f`` it was replacing (1.2e-6 against 1.7e-7). Six
+    significant digits is not enough for a cost-scale threshold, and the fix for "not enough
+    digits" is more digits rather than a different exponent.
+    """
+    if threshold == float("inf"):
+        return "never flag"
+    if threshold == float("-inf"):
+        return "flag everything"
+    fixed = f"{threshold:.6f}"
+    return fixed if float(fixed) == threshold else repr(threshold)
+
 
 #: Resamples for a bootstrap interval. 1,000 is enough for a stable 95% percentile interval
 #: and cheap even at 88k test rows, because each resample only re-sorts existing scores.
@@ -284,8 +312,7 @@ class EvaluationResult:
             f"### {self.model_name} — held-out {self.split} "
             f"(n={self.rows:,}, positives={self.positives:,}, "
             f"base rate={100 * self.base_rate:.4f}%)",
-            f"Threshold: {self.threshold:.6f}  (chosen on validation by "
-            f"{self.threshold_criterion})",
+            f"Threshold: {format_threshold(self.threshold)}  ({self.threshold_criterion})",
             "",
             f"PR-AUC     {self.pr_auc:.4f}{interval}",
             f"           no-skill floor {self.base_rate:.4f} "
@@ -357,3 +384,111 @@ def threshold_for_recall(
     if usable.size == 0:
         return float(np.min(scores))
     return float(thresholds[usable[-1]])
+
+
+# ==========================================================================================
+# Intervals on a cost or value difference
+# ==========================================================================================
+#
+# Phase 5 reported the meta-learner as roughly 1.7% cheaper than Tier-1 at a matched flag rate
+# and could not say whether that survived resampling, because this module had an interval for
+# a PR-AUC difference and nothing for a cost or value one. BUILD_LOG recorded the gap as a
+# known limitation and handed it to Phase 6, whose entire headline is a cost difference.
+#
+# **One caveat travels with every interval below.** The resample is stratified, so the number
+# of frauds is held fixed and only *which* frauds -- and therefore which amounts -- varies.
+# For PR-AUC that is a variance reduction with no downside. For cost it means the interval
+# describes uncertainty in the amounts, not in the base rate, and cost on this corpus is
+# dominated by a handful of large transactions. The intervals are therefore wide, and that
+# width is the finding rather than a defect in the estimator.
+
+
+def _cost_per_1000_at_flag_rate(
+    labels: npt.NDArray[np.bool_],
+    scores: npt.NDArray[np.float64],
+    amounts: npt.NDArray[np.float64],
+    flag_rate: float,
+    model: CostModel,
+) -> float:
+    """Return cost per 1,000 rows at the threshold flagging ``flag_rate`` of them."""
+    threshold = threshold_for_flag_rate(scores, flag_rate)
+    return cost_at_threshold(labels, scores, amounts, threshold, model).cost_per_1000_units
+
+
+def bootstrap_cost_delta(
+    labels: npt.NDArray[np.bool_],
+    scores_a: npt.NDArray[np.float64],
+    scores_b: npt.NDArray[np.float64],
+    amounts: npt.NDArray[np.float64],
+    model: CostModel,
+    *,
+    flag_rate: float,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Return an interval for ``cost_per_1000(a) - cost_per_1000(b)`` at a matched flag rate.
+
+    Negative means ``a`` is cheaper. An interval straddling zero means the two policies cost
+    the same, however far apart their point estimates look.
+
+    The threshold is re-derived inside each resample rather than held fixed at the one the
+    full sample produced. It is a quantile of the scores, so it is itself an estimate; holding
+    it fixed would report an interval for a decision rule nobody could have chosen without
+    having already seen the data.
+    """
+    if not labels.any():
+        return 0.0, 0.0
+    draws = np.array(
+        [
+            _cost_per_1000_at_flag_rate(
+                labels[index], scores_a[index], amounts[index], flag_rate, model
+            )
+            - _cost_per_1000_at_flag_rate(
+                labels[index], scores_b[index], amounts[index], flag_rate, model
+            )
+            for index in _bootstrap_indices(labels, resamples, seed)
+        ]
+    )
+    return _percentile_interval(draws)
+
+
+def _value_recall_at_flag_rate(
+    labels: npt.NDArray[np.bool_],
+    scores: npt.NDArray[np.float64],
+    amounts: npt.NDArray[np.float64],
+    flag_rate: float,
+) -> float:
+    """Return the share of fraud value captured at the matched flag rate."""
+    total = float(np.sum(amounts[labels]))
+    if not total:
+        return 0.0
+    flagged = scores >= threshold_for_flag_rate(scores, flag_rate)
+    return float(np.sum(amounts[labels & flagged])) / total
+
+
+def bootstrap_value_recall_delta(
+    labels: npt.NDArray[np.bool_],
+    scores_a: npt.NDArray[np.float64],
+    scores_b: npt.NDArray[np.float64],
+    amounts: npt.NDArray[np.float64],
+    *,
+    flag_rate: float,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Return an interval for the difference in fraud value captured, ``a`` minus ``b``.
+
+    Positive means ``a`` captures more of the money. This is the mechanism behind any cost
+    difference between two rankings at the same flag rate, so it is reported beside the cost
+    interval rather than inferred from it.
+    """
+    if not labels.any():
+        return 0.0, 0.0
+    draws = np.array(
+        [
+            _value_recall_at_flag_rate(labels[index], scores_a[index], amounts[index], flag_rate)
+            - _value_recall_at_flag_rate(labels[index], scores_b[index], amounts[index], flag_rate)
+            for index in _bootstrap_indices(labels, resamples, seed)
+        ]
+    )
+    return _percentile_interval(draws)

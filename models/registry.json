@@ -8884,5 +8884,865 @@
       "Tier-2 memorisation diagnostic: {'included_clean_rows': 35899, 'excluded_clean_rows': 28569, 'fraud_rows': 5856, 'memorisation_auc': 0.950091, 'fraud_auc': 0.862818, 'residual_auc': 0.364853}.",
       "Tier-3 circularity control: The control uses fingerprints sharing no column with the constructed account_id, at a MATCHED entity cap of 200. Phase 4 defect B5 recorded its own control as confounded by a mismatched cap (main 200 against control 50); matching it here closes that defect rather than inheriting it."
     ]
+  },
+  {
+    "model_id": "causal-cost-dr-plugin-ieee-cis-20260825t045935z",
+    "layer": "causal_cost",
+    "algorithm": "cost_weighted_plugin + tweedie_loss_regression",
+    "source_dataset": "ieee_cis",
+    "trained_at": "2026-08-25T04:59:35.602686+00:00",
+    "training_window": {
+      "start": "2017-12-02 00:00:00+00:00",
+      "end": "2018-03-31 19:26:36+00:00"
+    },
+    "feature_version": "fv_c1d8eb96f693",
+    "hyperparameters": {
+      "consumes_tier1": "tier1-anomaly-lightgbm-ieee-cis-20260822t185154z",
+      "review_cost": 3.0,
+      "chargeback_fee": 15.0,
+      "review_capacity_cap": 0.01,
+      "loss_model": {
+        "feature_names": [
+          "card1",
+          "card2",
+          "card3",
+          "card5",
+          "addr1",
+          "addr2",
+          "dist1",
+          "dist2",
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6",
+          "C7",
+          "C8",
+          "C9",
+          "C10",
+          "C11",
+          "C12",
+          "C13",
+          "C14",
+          "D1",
+          "D2",
+          "D3",
+          "D4",
+          "D5",
+          "D6",
+          "D7",
+          "D8",
+          "D9",
+          "D10",
+          "D11",
+          "D12",
+          "D13",
+          "D14",
+          "D15",
+          "id_01",
+          "id_02",
+          "id_03",
+          "id_04",
+          "id_05",
+          "id_06",
+          "id_07",
+          "id_08",
+          "id_09",
+          "id_10",
+          "id_11",
+          "id_13",
+          "id_14",
+          "id_17",
+          "id_18",
+          "id_19",
+          "id_20",
+          "id_21",
+          "id_22",
+          "id_24",
+          "id_25",
+          "id_26",
+          "id_32",
+          "has_identity",
+          "hour_of_day",
+          "day_of_week",
+          "account_prior_txn_count",
+          "seconds_since_prior_txn",
+          "amount_prior_mean",
+          "amount_zscore_vs_own_history",
+          "amount_log",
+          "velocity_count_1h",
+          "velocity_sum_1h",
+          "velocity_count_24h",
+          "velocity_sum_24h",
+          "velocity_count_7d",
+          "velocity_sum_7d",
+          "device_is_new",
+          "device_mismatch",
+          "addr_is_new",
+          "addr_mismatch",
+          "freq_ProductCD",
+          "freq_card4",
+          "freq_card6",
+          "freq_P_emaildomain",
+          "freq_id_30",
+          "freq_id_31",
+          "freq_id_33",
+          "freq_DeviceInfo",
+          "ProductCD",
+          "card4",
+          "card6",
+          "P_emaildomain",
+          "R_emaildomain",
+          "M1",
+          "M2",
+          "M3",
+          "M4",
+          "M5",
+          "M6",
+          "M7",
+          "M8",
+          "M9",
+          "id_12",
+          "id_15",
+          "id_16",
+          "id_23",
+          "id_27",
+          "id_28",
+          "id_29",
+          "id_34",
+          "id_35",
+          "id_36",
+          "id_37",
+          "id_38",
+          "DeviceType"
+        ],
+        "best_iteration": 151,
+        "chargeback_fee": 15.0,
+        "hyperparameters": {
+          "objective": "tweedie",
+          "tweedie_variance_power": 1.5,
+          "metric": "tweedie",
+          "learning_rate": 0.05,
+          "num_leaves": 31,
+          "min_data_in_leaf": 100,
+          "feature_fraction": 0.8,
+          "bagging_fraction": 0.8,
+          "bagging_freq": 1,
+          "lambda_l2": 1.0,
+          "num_threads": 4,
+          "deterministic": true,
+          "force_row_wise": true,
+          "verbosity": -1
+        },
+        "num_rounds": 600,
+        "early_stopping": 50
+      },
+      "optimal_threshold": -0.579557518294842,
+      "shipped_threshold": 90.85343882831513
+    },
+    "random_seed": 42,
+    "heldout_test": {
+      "model": "cost-policy:plug_in",
+      "split": "test",
+      "rows": 88581,
+      "positives": 3083,
+      "base_rate": 0.034804,
+      "threshold": 90.85343882831513,
+      "threshold_criterion": "flagging at most 1.0% of V-late validation traffic, transferred to test unchanged",
+      "pr_auc": 0.319395,
+      "pr_auc_no_skill_floor": 0.034804,
+      "lift_over_no_skill": 9.177,
+      "precision": 0.484032,
+      "recall": 0.157314,
+      "f1": 0.237454,
+      "confusion_matrix": {
+        "tn": 84981,
+        "fp": 517,
+        "fn": 2598,
+        "tp": 485
+      },
+      "pr_auc_ci95": [
+        0.304734,
+        0.33641
+      ],
+      "false_positive_cost": {
+        "threshold": 90.85343882831513,
+        "units": "IEEE-CIS amount units (consistent with USD)",
+        "review_cost_per_false_positive": 3.0,
+        "flat_chargeback_fee_per_false_negative": 15.0,
+        "false_positives": 517,
+        "false_negatives": 2598,
+        "false_positive_cost": 1551.0,
+        "false_negative_cost": 322179.58,
+        "total_cost": 323730.58,
+        "unit": "transaction",
+        "cost_per_1000_transactions": 3654.6277,
+        "flagged": 1002,
+        "flag_rate": 0.011312,
+        "assumptions": [
+          "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+          "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+          "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+          "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+          "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+        ]
+      },
+      "notes": [
+        "PR-AUC here ranks by expected cost, not by probability. It is reported for continuity with Phases 2-5 and is NOT this phase's headline -- a cost-ranked policy is not trying to win a count-based metric, and losing one is the expected consequence of ranking by value instead."
+      ],
+      "unit_of_analysis": "decision",
+      "policies": [
+        {
+          "strategy": "probability",
+          "heldout_test": {
+            "model": "cost-policy:probability",
+            "split": "test",
+            "rows": 88581,
+            "positives": 3083,
+            "base_rate": 0.034804,
+            "threshold": 0.7090647381510433,
+            "threshold_criterion": "flagging at most 1.0% of V-late validation traffic, transferred to test unchanged",
+            "pr_auc": 0.527572,
+            "pr_auc_no_skill_floor": 0.034804,
+            "lift_over_no_skill": 15.158,
+            "precision": 0.80798,
+            "recall": 0.315277,
+            "f1": 0.45357,
+            "confusion_matrix": {
+              "tn": 85267,
+              "fp": 231,
+              "fn": 2111,
+              "tp": 972
+            },
+            "pr_auc_ci95": [
+              0.511655,
+              0.546153
+            ],
+            "false_positive_cost": {
+              "threshold": 0.7090647381510433,
+              "units": "IEEE-CIS amount units (consistent with USD)",
+              "review_cost_per_false_positive": 3.0,
+              "flat_chargeback_fee_per_false_negative": 15.0,
+              "false_positives": 231,
+              "false_negatives": 2111,
+              "false_positive_cost": 693.0,
+              "false_negative_cost": 402657.98,
+              "total_cost": 403350.98,
+              "unit": "transaction",
+              "cost_per_1000_transactions": 4553.4706,
+              "flagged": 1203,
+              "flag_rate": 0.013581,
+              "assumptions": [
+                "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+                "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+                "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+                "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+                "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+              ]
+            }
+          },
+          "shipped_point": {
+            "threshold": 0.7090647381510433,
+            "flag_rate": 0.013581,
+            "precision": 0.80798,
+            "recall": 0.315277,
+            "recall_by_value": 0.209995,
+            "caught_fraud_value": 98615.54,
+            "missed_fraud_value": 370992.98,
+            "confusion_matrix": {
+              "tn": 85267,
+              "fp": 231,
+              "fn": 2111,
+              "tp": 972
+            },
+            "cost_per_1000": 4553.47
+          },
+          "matched_flag_rate": {
+            "threshold": 0.8517166781525443,
+            "flag_rate": 0.010002,
+            "precision": 0.86456,
+            "recall": 0.248459,
+            "recall_by_value": 0.150031,
+            "caught_fraud_value": 70455.93,
+            "missed_fraud_value": 399152.59,
+            "confusion_matrix": {
+              "tn": 85378,
+              "fp": 120,
+              "fn": 2317,
+              "tp": 766
+            },
+            "cost_per_1000": 4902.49
+          },
+          "cost_optimal_point": {
+            "threshold": 0.0179188130382405,
+            "flag_rate": 0.240097,
+            "precision": 0.123049,
+            "recall": 0.848849,
+            "recall_by_value": 0.870296,
+            "caught_fraud_value": 408698.32,
+            "missed_fraud_value": 60910.2,
+            "confusion_matrix": {
+              "tn": 66847,
+              "fp": 18651,
+              "fn": 466,
+              "tp": 2617
+            },
+            "cost_per_1000": 1398.19
+          }
+        },
+        {
+          "strategy": "plug_in",
+          "heldout_test": {
+            "model": "cost-policy:plug_in",
+            "split": "test",
+            "rows": 88581,
+            "positives": 3083,
+            "base_rate": 0.034804,
+            "threshold": 90.85343882831513,
+            "threshold_criterion": "flagging at most 1.0% of V-late validation traffic, transferred to test unchanged",
+            "pr_auc": 0.319395,
+            "pr_auc_no_skill_floor": 0.034804,
+            "lift_over_no_skill": 9.177,
+            "precision": 0.484032,
+            "recall": 0.157314,
+            "f1": 0.237454,
+            "confusion_matrix": {
+              "tn": 84981,
+              "fp": 517,
+              "fn": 2598,
+              "tp": 485
+            },
+            "pr_auc_ci95": [
+              0.304734,
+              0.33641
+            ],
+            "false_positive_cost": {
+              "threshold": 90.85343882831513,
+              "units": "IEEE-CIS amount units (consistent with USD)",
+              "review_cost_per_false_positive": 3.0,
+              "flat_chargeback_fee_per_false_negative": 15.0,
+              "false_positives": 517,
+              "false_negatives": 2598,
+              "false_positive_cost": 1551.0,
+              "false_negative_cost": 322179.58,
+              "total_cost": 323730.58,
+              "unit": "transaction",
+              "cost_per_1000_transactions": 3654.6277,
+              "flagged": 1002,
+              "flag_rate": 0.011312,
+              "assumptions": [
+                "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+                "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+                "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+                "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+                "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+              ]
+            },
+            "notes": [
+              "PR-AUC here ranks by expected cost, not by probability. It is reported for continuity with Phases 2-5 and is NOT this phase's headline -- a cost-ranked policy is not trying to win a count-based metric, and losing one is the expected consequence of ranking by value instead."
+            ]
+          },
+          "shipped_point": {
+            "threshold": 90.85343882831513,
+            "flag_rate": 0.011312,
+            "precision": 0.484032,
+            "recall": 0.157314,
+            "recall_by_value": 0.396924,
+            "caught_fraud_value": 186398.94,
+            "missed_fraud_value": 283209.58,
+            "confusion_matrix": {
+              "tn": 84981,
+              "fp": 517,
+              "fn": 2598,
+              "tp": 485
+            },
+            "cost_per_1000": 3654.63
+          },
+          "matched_flag_rate": {
+            "threshold": 99.98794967846524,
+            "flag_rate": 0.010002,
+            "precision": 0.495485,
+            "recall": 0.142394,
+            "recall_by_value": 0.369768,
+            "caught_fraud_value": 173646.0,
+            "missed_fraud_value": 295962.52,
+            "confusion_matrix": {
+              "tn": 85051,
+              "fp": 447,
+              "fn": 2644,
+              "tp": 439
+            },
+            "cost_per_1000": 3804.02
+          },
+          "cost_optimal_point": {
+            "threshold": -0.579557518294842,
+            "flag_rate": 0.231381,
+            "precision": 0.121292,
+            "recall": 0.806357,
+            "recall_by_value": 0.919881,
+            "caught_fraud_value": 431984.17,
+            "missed_fraud_value": 37624.35,
+            "confusion_matrix": {
+              "tn": 67488,
+              "fp": 18010,
+              "fn": 597,
+              "tp": 2486
+            },
+            "cost_per_1000": 1135.79
+          }
+        },
+        {
+          "strategy": "learned_loss",
+          "heldout_test": {
+            "model": "cost-policy:learned_loss",
+            "split": "test",
+            "rows": 88581,
+            "positives": 3083,
+            "base_rate": 0.034804,
+            "threshold": 56.52708851996744,
+            "threshold_criterion": "flagging at most 1.0% of V-late validation traffic, transferred to test unchanged",
+            "pr_auc": 0.292378,
+            "pr_auc_no_skill_floor": 0.034804,
+            "lift_over_no_skill": 8.401,
+            "precision": 0.493519,
+            "recall": 0.172884,
+            "f1": 0.256065,
+            "confusion_matrix": {
+              "tn": 84951,
+              "fp": 547,
+              "fn": 2550,
+              "tp": 533
+            },
+            "pr_auc_ci95": [
+              0.276716,
+              0.308827
+            ],
+            "false_positive_cost": {
+              "threshold": 56.52708851996744,
+              "units": "IEEE-CIS amount units (consistent with USD)",
+              "review_cost_per_false_positive": 3.0,
+              "flat_chargeback_fee_per_false_negative": 15.0,
+              "false_positives": 547,
+              "false_negatives": 2550,
+              "false_positive_cost": 1641.0,
+              "false_negative_cost": 328275.46,
+              "total_cost": 329916.46,
+              "unit": "transaction",
+              "cost_per_1000_transactions": 3724.4608,
+              "flagged": 1080,
+              "flag_rate": 0.012192,
+              "assumptions": [
+                "A false positive costs 3.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.",
+                "A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.",
+                "Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.",
+                "Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.",
+                "Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies."
+              ]
+            },
+            "notes": [
+              "PR-AUC here ranks by expected cost, not by probability. It is reported for continuity with Phases 2-5 and is NOT this phase's headline -- a cost-ranked policy is not trying to win a count-based metric, and losing one is the expected consequence of ranking by value instead."
+            ]
+          },
+          "shipped_point": {
+            "threshold": 56.52708851996744,
+            "flag_rate": 0.012192,
+            "precision": 0.493519,
+            "recall": 0.172884,
+            "recall_by_value": 0.38241,
+            "caught_fraud_value": 179583.06,
+            "missed_fraud_value": 290025.46,
+            "confusion_matrix": {
+              "tn": 84951,
+              "fp": 547,
+              "fn": 2550,
+              "tp": 533
+            },
+            "cost_per_1000": 3724.46
+          },
+          "matched_flag_rate": {
+            "threshold": 64.62632029620828,
+            "flag_rate": 0.010002,
+            "precision": 0.505643,
+            "recall": 0.145313,
+            "recall_by_value": 0.345254,
+            "caught_fraud_value": 162134.26,
+            "missed_fraud_value": 307474.26,
+            "confusion_matrix": {
+              "tn": 85060,
+              "fp": 438,
+              "fn": 2635,
+              "tp": 448
+            },
+            "cost_per_1000": 3932.14
+          },
+          "cost_optimal_point": {
+            "threshold": -0.21613213828903755,
+            "flag_rate": 0.226053,
+            "precision": 0.118807,
+            "recall": 0.771651,
+            "recall_by_value": 0.896264,
+            "caught_fraud_value": 420893.16,
+            "missed_fraud_value": 48715.36,
+            "confusion_matrix": {
+              "tn": 67853,
+              "fp": 17645,
+              "fn": 704,
+              "tp": 2379
+            },
+            "cost_per_1000": 1266.75
+          }
+        }
+      ],
+      "cost_reduction_vs_baseline": {
+        "policy": "plug_in",
+        "baseline": "probability",
+        "flag_rate": 0.01,
+        "cost_delta_per_1000": -1098.4756,
+        "cost_delta_ci95": [
+          -1345.2788,
+          -881.809
+        ],
+        "cost_delta_pct": -22.4065,
+        "value_recall_delta": 0.219736,
+        "value_recall_delta_ci95": [
+          0.183194,
+          0.255257
+        ],
+        "verdict": "CHEAPER than the baseline"
+      },
+      "cost_per_transaction_at_shipped_threshold": 3.654628,
+      "cost_per_transaction_at_matched_flag_rate": 3.804016,
+      "confusion_matrix_at_optimum": {
+        "tn": 67488,
+        "fp": 18010,
+        "fn": 597,
+        "tp": 2486
+      },
+      "ope_validation": [
+        {
+          "policy": "cost-policy:probability at 1% flag rate",
+          "rows": 88581,
+          "true_cost_per_unit": 4.902491,
+          "direct_method": 4.784687,
+          "ipw": 5.15839,
+          "doubly_robust": 4.961749,
+          "relative_bias": {
+            "direct_method": -0.024029,
+            "ipw": 0.052198,
+            "doubly_robust": 0.012087
+          },
+          "logging_policy": "Simulated stochastic reviewer: P(block) = 0.05 + 0.55 * sigmoid(4.0 * (score - mean score)), seed 42. SIMULATED, not recovered from data -- neither corpus records a historical action. Its only purpose is to give the estimators below a policy whose propensity is known, so their answers can be checked against exact truth.",
+          "caveat": "The logging policy is SIMULATED and its propensity is known by construction. These figures validate the estimators; they are not a causal effect measured on this corpus, which records no historical action at all."
+        },
+        {
+          "policy": "cost-policy:plug_in at 1% flag rate",
+          "rows": 88581,
+          "true_cost_per_unit": 3.804016,
+          "direct_method": 3.474624,
+          "ipw": 3.887465,
+          "doubly_robust": 3.855214,
+          "relative_bias": {
+            "direct_method": -0.086591,
+            "ipw": 0.021937,
+            "doubly_robust": 0.013459
+          },
+          "logging_policy": "Simulated stochastic reviewer: P(block) = 0.05 + 0.55 * sigmoid(4.0 * (score - mean score)), seed 42. SIMULATED, not recovered from data -- neither corpus records a historical action. Its only purpose is to give the estimators below a policy whose propensity is known, so their answers can be checked against exact truth.",
+          "caveat": "The logging policy is SIMULATED and its propensity is known by construction. These figures validate the estimators; they are not a causal effect measured on this corpus, which records no historical action at all."
+        },
+        {
+          "policy": "cost-policy:learned_loss at 1% flag rate",
+          "rows": 88581,
+          "true_cost_per_unit": 3.932144,
+          "direct_method": 3.871328,
+          "ipw": 4.015172,
+          "doubly_robust": 3.988352,
+          "relative_bias": {
+            "direct_method": -0.015466,
+            "ipw": 0.021115,
+            "doubly_robust": 0.014294
+          },
+          "logging_policy": "Simulated stochastic reviewer: P(block) = 0.05 + 0.55 * sigmoid(4.0 * (score - mean score)), seed 42. SIMULATED, not recovered from data -- neither corpus records a historical action. Its only purpose is to give the estimators below a policy whose propensity is known, so their answers can be checked against exact truth.",
+          "caveat": "The logging policy is SIMULATED and its propensity is known by construction. These figures validate the estimators; they are not a causal effect measured on this corpus, which records no historical action at all."
+        }
+      ],
+      "calibration": {
+        "bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "count": 82965,
+            "mean_predicted": 0.011317,
+            "observed_frequency": 0.014078
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "count": 2404,
+            "mean_predicted": 0.140377,
+            "observed_frequency": 0.122712
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.30000000000000004,
+            "count": 814,
+            "mean_predicted": 0.244561,
+            "observed_frequency": 0.237101
+          },
+          {
+            "bin_lower": 0.30000000000000004,
+            "bin_upper": 0.4,
+            "count": 427,
+            "mean_predicted": 0.345759,
+            "observed_frequency": 0.299766
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "count": 305,
+            "mean_predicted": 0.445562,
+            "observed_frequency": 0.354098
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6000000000000001,
+            "count": 232,
+            "mean_predicted": 0.550147,
+            "observed_frequency": 0.469828
+          },
+          {
+            "bin_lower": 0.6000000000000001,
+            "bin_upper": 0.7000000000000001,
+            "count": 212,
+            "mean_predicted": 0.65092,
+            "observed_frequency": 0.462264
+          },
+          {
+            "bin_lower": 0.7000000000000001,
+            "bin_upper": 0.8,
+            "count": 212,
+            "mean_predicted": 0.751636,
+            "observed_frequency": 0.622642
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "count": 254,
+            "mean_predicted": 0.852716,
+            "observed_frequency": 0.712598
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "count": 756,
+            "mean_predicted": 0.967476,
+            "observed_frequency": 0.887566
+          }
+        ],
+        "expected_calibration_error": 0.005725,
+        "brier_score": 0.022601,
+        "fitted_on": "V-fit",
+        "note": "Every cost figure in this entry is a probability multiplied by an amount, so calibration error propagates directly into cost. Fitted on V-fit; thresholds were chosen on V-late; this measurement is on test."
+      },
+      "sensitivity": [
+        {
+          "varied": "both costs",
+          "factor": 0.5,
+          "threshold": 0.5915505027852153,
+          "total_cost": 13267.52,
+          "false_positives": 4468,
+          "false_negatives": 115,
+          "flag_rate": 0.227265
+        },
+        {
+          "varied": "both costs",
+          "factor": 1.0,
+          "threshold": -0.579557518294842,
+          "total_cost": 20622.97,
+          "false_positives": 4322,
+          "false_negatives": 116,
+          "flag_rate": 0.220627
+        },
+        {
+          "varied": "both costs",
+          "factor": 1.5,
+          "threshold": -1.5066272763252089,
+          "total_cost": 27640.32,
+          "false_positives": 3966,
+          "false_negatives": 127,
+          "flag_rate": 0.204055
+        },
+        {
+          "varied": "review cost only",
+          "factor": 1.0,
+          "threshold": -0.579557518294842,
+          "total_cost": 20622.97,
+          "false_positives": 4322,
+          "false_negatives": 116,
+          "flag_rate": 0.220627
+        },
+        {
+          "varied": "review cost only",
+          "factor": 5.0,
+          "threshold": 3.1315883885217772,
+          "total_cost": 47132.13,
+          "false_positives": 864,
+          "false_negatives": 312,
+          "flag_rate": 0.055631
+        },
+        {
+          "varied": "review cost only",
+          "factor": 25.0,
+          "threshold": 34.011473795718445,
+          "total_cost": 69307.64,
+          "false_positives": 145,
+          "false_negatives": 489,
+          "flag_rate": 0.015172
+        },
+        {
+          "varied": "review cost only",
+          "factor": 100.0,
+          "threshold": 48.17737110487216,
+          "total_cost": 78150.24,
+          "false_positives": 23,
+          "false_negatives": 551,
+          "flag_rate": 0.006864
+        }
+      ],
+      "cnp_regime": [
+        {
+          "policy": "probability",
+          "threshold": 0.8517166781525443,
+          "flag_rate": 0.010002,
+          "precision": 0.86456,
+          "recall": 0.248459,
+          "recall_by_value": 0.150031,
+          "caught_fraud_value": 70455.93,
+          "missed_fraud_value": 399152.59,
+          "confusion_matrix": {
+            "tn": 85378,
+            "fp": 120,
+            "fn": 2317,
+            "tp": 766
+          },
+          "cost_per_1000": 17652.23
+        },
+        {
+          "policy": "plug_in",
+          "threshold": 488.7990808363647,
+          "flag_rate": 0.010002,
+          "precision": 0.82167,
+          "recall": 0.236134,
+          "recall_by_value": 0.268571,
+          "caught_fraud_value": 126123.11,
+          "missed_fraud_value": 343485.41,
+          "confusion_matrix": {
+            "tn": 85340,
+            "fp": 158,
+            "fn": 2355,
+            "tp": 728
+          },
+          "cost_per_1000": 17259.74
+        },
+        {
+          "policy": "learned_loss",
+          "threshold": 449.97746575412947,
+          "flag_rate": 0.010002,
+          "precision": 0.858916,
+          "recall": 0.246837,
+          "recall_by_value": 0.209443,
+          "caught_fraud_value": 98356.15,
+          "missed_fraud_value": 371252.37,
+          "confusion_matrix": {
+            "tn": 85373,
+            "fp": 125,
+            "fn": 2322,
+            "tp": 761
+          },
+          "cost_per_1000": 17368.31
+        }
+      ],
+      "cnp_regime_deltas": [
+        {
+          "policy": "plug_in",
+          "baseline": "probability",
+          "cost_delta_per_1000": -392.49,
+          "cost_delta_ci95": [
+            -582.1832,
+            -145.4999
+          ],
+          "cost_delta_pct": -2.2235,
+          "verdict": "CHEAPER than the baseline"
+        },
+        {
+          "policy": "learned_loss",
+          "baseline": "probability",
+          "cost_delta_per_1000": -283.92,
+          "cost_delta_ci95": [
+            -432.6864,
+            -97.7251
+          ],
+          "cost_delta_pct": -1.6084,
+          "verdict": "CHEAPER than the baseline"
+        }
+      ],
+      "validation_slices": [
+        {
+          "slice": "V-fit",
+          "rows": 35432,
+          "positives": 1231,
+          "base_rate": 0.034743,
+          "first_event": "2018-03-31 19:26:43+00:00",
+          "last_event": "2018-04-12 12:31:11+00:00"
+        },
+        {
+          "slice": "V-arb",
+          "rows": 31003,
+          "positives": 1131,
+          "base_rate": 0.03648,
+          "first_event": "2018-04-12 12:31:34+00:00",
+          "last_event": "2018-04-24 02:31:07+00:00"
+        },
+        {
+          "slice": "V-late",
+          "rows": 22146,
+          "positives": 680,
+          "base_rate": 0.030705,
+          "first_event": "2018-04-24 02:31:25+00:00",
+          "last_event": "2018-05-02 05:17:20+00:00"
+        }
+      ]
+    },
+    "baseline_comparison": [
+      {
+        "configuration": "probability ranking (Tier-1 baseline, Phase 2 behaviour)",
+        "cost_per_1000": 4902.4914,
+        "recall_by_value": 0.150031,
+        "recall_by_count": 0.248459
+      },
+      {
+        "configuration": "plug_in ranking",
+        "cost_per_1000": 3804.0158,
+        "recall_by_value": 0.369768,
+        "recall_by_count": 0.142394
+      },
+      {
+        "configuration": "learned_loss ranking",
+        "cost_per_1000": 3932.1442,
+        "recall_by_value": 0.345254,
+        "recall_by_count": 0.145313
+      }
+    ],
+    "artifact": "artifacts/causal-cost-dr-plugin-ieee-cis-20260825t045935z.meta.json",
+    "notes": [
+      "NO TREATMENT VARIABLE EXISTS IN THIS DATA. IEEE-CIS records no action, decision, decline, review or dispute column; PaySim's isFlaggedFraud is a deterministic simulator rule firing on 16 of 6.36M rows, nested inside the label, and the pipeline drops it. Every transaction here was allowed. No causal effect is recovered from this corpus and none is claimed.",
+      "Under the stated cost model both potential outcomes are deterministic given (label, amount), so the DR-Learner collapses exactly onto a cost-weighted plug-in rule driven by a calibrated probability. The proof is in the app.models.causal_cost module docstring. The DR machinery is used for off-policy EVALUATION against a SIMULATED logging policy, where the true policy cost is exactly computable and the estimators can therefore be validated rather than merely applied.",
+      "Break-even probability is per-transaction, not global: p > r/(A+f+r). Across the test split it spans 0.000557 to 0.162171 (median 0.034682). That spread is what cost-aware ranking exploits and a single global threshold cannot.",
+      "Loss regression: LightGBM Tweedie (variance power 1.5) on the target Y*(amount+15.00), the same feature set as Tier-1 (113 columns). Out-of-fold over 5 forward-chaining blocks; block 1 unscored, 330,703 of 413,378 train rows carry an out-of-fold prediction.",
+      "Amount reaches every model in this phase as the engineered amount_log, which is a live Tier-1 feature. The raw amount and TransactionAmt columns are on the deny list only because they are exact duplicates of it, monotone and therefore giving a tree identical splits -- not because amount is withheld. This is not leakage: the amount is known before the decision is made, which is what makes it usable in the cost arithmetic at all. The loss regression reads exactly the columns Tier-1 reads and adds nothing.",
+      "The per-transaction worked examples behind the 'what this does NOT catch' section are deliberately NOT recorded here. This file is tracked in git, and ten identified transactions with their exact fraud probabilities and the features that produced them is a worked set of examples of what does and does not clear the operating threshold. The aggregate failure modes are described in notebooks/cost_report.md and app/models/README.md, which is what ml-evaluation-standards section 4 requires; the identifiers add attacker value and are required by nothing.",
+      "THE HEADLINE IS REGIME-DEPENDENT. A false negative costs amount + fee, so what value-weighting exploits is the share of that cost which varies between transactions: 82.0% at the default fee of 15.00 against a median test amount of 68.50, but only 12.0% at the card-not-present fee of 500.00. Under that regime the advantage largely disappears, as the cnp_regime block records. Cost-aware ranking pays in proportion to how heterogeneous the loss is, and that is a property of a business's chargeback economics rather than of this model.",
+      "Test was scored once, after all operating points were fixed on V-late. The cost matrix is the project default (review 3.00, fee 15.00) so these figures are comparable with Phases 2-5; the card-not-present regime (50/500) is reported as a separate table and selects nothing."
+    ]
   }
 ]
