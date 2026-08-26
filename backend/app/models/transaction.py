@@ -25,7 +25,16 @@ Row-Level Security is enabled and forced on this table by the Phase 1 migration 
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Numeric, String, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    Index,
+    Numeric,
+    String,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -94,6 +103,24 @@ class Transaction(Base):
         nullable=False,
         default=dict,
         doc="The engineered vector. Its key set is fixed by feature_version.",
+    )
+
+    # The two raw inputs behind the familiarity features, added in Phase 7. They are stored
+    # rather than derived because serving cannot recompute "is this device new for this
+    # account?" for an incoming transaction without the account's prior *values* — the
+    # engineered vector holds the already-computed flags, which answer the question for their
+    # own row and for no other. Nullable and unbackfilled on rows loaded before Phase 7: a NULL
+    # reads as the ``__missing__`` sentinel, which is how the training path already treats an
+    # absent DeviceInfo, so the degradation is to a value the model has seen.
+    device_info: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+        doc="IEEE-CIS DeviceInfo, retained for serving-time familiarity features.",
+    )
+    addr1: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        doc="IEEE-CIS addr1, retained for serving-time familiarity features.",
     )
 
     __table_args__ = (

@@ -130,6 +130,24 @@ class DroppedColumn:
         return f"{self.column} ({self.reason})"
 
 
+def parse_dropped(entries: Any) -> list[DroppedColumn]:
+    """Rebuild :class:`DroppedColumn` records from their ``"column (reason)"`` serialisation.
+
+    The inverse of :meth:`DroppedColumn.__str__`. Lives here, beside the type it rebuilds,
+    because the string form is hashed into the feature version and a parser that drifts from
+    the formatter silently changes every hash derived from it.
+    """
+    rebuilt: list[DroppedColumn] = []
+    for entry in entries:
+        text = str(entry)
+        if text.endswith(")") and " (" in text:
+            column, reason = text.split(" (", 1)
+            rebuilt.append(DroppedColumn(column=column, reason=reason[:-1]))
+        else:
+            rebuilt.append(DroppedColumn(column=text, reason=""))
+    return rebuilt
+
+
 def denied_columns_present(columns: Sequence[str]) -> list[str]:
     """Return any denied column found in ``columns``.
 
@@ -232,6 +250,41 @@ class Tier1InputSpec:
     encoders: Mapping[str, Mapping[str, float]]
     post_settlement_columns: tuple[str, ...]
     dropped: tuple[DroppedColumn, ...]
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "Tier1InputSpec":
+        """Rebuild a spec from the ``spec`` block of a Tier-1 sidecar.
+
+        The inverse of what :meth:`Tier1Model.save` writes. Phase 2 only ever needed ``save``,
+        so this reconstruction was written inline in Phase 4 and again in Phase 5; Phase 7
+        needs it a third time, at serving, and three copies of a hash-critical deserialisation
+        is two too many.
+
+        ``dropped`` is the part that is easy to get wrong and expensive to get wrong.
+        :meth:`engineering_parameters` hashes ``[str(item) for item in self.dropped]`` into the
+        feature version, so rebuilding with an empty tuple mints a hash that resolves to
+        nothing in the registry — a traceability chain that looks intact and is not. The
+        sidecar stores each entry as ``"column (reason)"``, which is exactly
+        :meth:`DroppedColumn.__str__`, so it round-trips.
+
+        Args:
+            payload: The ``spec`` mapping from a ``<model_id>.meta.json`` sidecar.
+
+        Returns:
+            The reconstructed spec. Callers that care about provenance should compare
+            ``to_feature_definition().feature_version`` against the registry's record — see
+            :meth:`Tier1Model.load`, which does exactly that.
+        """
+        return cls(
+            source_dataset=payload["source_dataset"],
+            numeric_columns=tuple(payload["numeric_columns"]),
+            native_categorical_columns=tuple(payload["native_categorical_columns"]),
+            frequency_columns=tuple(payload["frequency_columns"]),
+            categories={key: tuple(value) for key, value in payload["categories"].items()},
+            encoders={key: dict(value) for key, value in payload["encoders"].items()},
+            post_settlement_columns=tuple(payload["post_settlement_columns"]),
+            dropped=tuple(parse_dropped(payload.get("dropped", ()))),
+        )
 
     @property
     def encoded_frequency_names(self) -> tuple[str, ...]:

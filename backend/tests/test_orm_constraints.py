@@ -37,17 +37,25 @@ from app.models.transaction import (
     Transaction,
 )
 
-MIGRATION_PATH = (
-    Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0001_core_tables.py"
-)
+MIGRATION_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 
-RLS_TABLES = ("transactions", "accounts")
+#: Every table holding transaction, account or decision data. Each must carry RLS enabled,
+#: forced, and at least one policy — security-checklist section 3.
+RLS_TABLES = ("transactions", "accounts", "audit_log")
 
 
 @pytest.fixture(scope="module")
 def migration_sql() -> str:
-    """Return the Phase 1 migration's source text."""
-    return MIGRATION_PATH.read_text(encoding="utf-8")
+    """Return every revision's source text, concatenated.
+
+    The schema is a *sequence* of revisions, not one file: Phase 1 created the transaction and
+    account tables, Phase 7 added ``audit_log`` and two columns to ``transactions``. Reading a
+    single revision would make these assertions fail the moment a later one legitimately
+    extends the schema, which is the opposite of what they are for.
+    """
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(MIGRATION_DIR.glob("*.py"))
+    )
 
 
 def quoted_values(sql: str) -> set[str]:
@@ -62,6 +70,11 @@ def orm_tables() -> tuple[Table, ...]:
     broader ``FromClause`` and so exposes neither ``constraints`` nor ``indexes``.
     """
     return tuple(Base.metadata.tables[name] for name in RLS_TABLES)
+
+
+def audit_log_table() -> Table:
+    """Return the append-only decision table."""
+    return Base.metadata.tables["audit_log"]
 
 
 class TestConstraintsMatchPythonLiterals:
@@ -83,8 +96,11 @@ class TestConstraintsMatchPythonLiterals:
 class TestMigrationMatchesTheOrm:
     """The migration is a snapshot, so drift from the ORM has to be caught explicitly."""
 
-    def test_migration_file_exists(self) -> None:
-        assert MIGRATION_PATH.is_file()
+    def test_migration_directory_has_revisions(self) -> None:
+        assert sorted(path.name for path in MIGRATION_DIR.glob("*.py")) == [
+            "0001_core_tables.py",
+            "0002_audit_log.py",
+        ]
 
     @pytest.mark.parametrize("table", RLS_TABLES)
     def test_migration_creates_each_table(self, migration_sql: str, table: str) -> None:
@@ -157,6 +173,70 @@ class TestRowLevelSecurity:
 
     def test_application_role_is_read_only(self, migration_sql: str) -> None:
         assert "GRANT SELECT ON transactions, accounts TO riskiq_app" in migration_sql
+
+    def test_application_role_can_connect(self, migration_sql: str) -> None:
+        """RLS policies are inert against a role nobody can connect as.
+
+        Phase 1 created ``riskiq_app`` NOLOGIN and recorded the resulting gap as an open FAIL:
+        the app connected as the table-owning superuser, which bypasses row-level security
+        unconditionally. Phase 7 grants LOGIN, which is what turns those policies into a
+        control rather than a description of one.
+        """
+        assert "ALTER ROLE riskiq_app LOGIN" in migration_sql
+
+    def test_analyst_role_exists_and_is_read_only(self, migration_sql: str) -> None:
+        """The estate-wide reader the dashboard needs must not also be able to write.
+
+        The analyst is the widest-reaching identity in the system — it sees every account's
+        transactions, rings and decisions, which is exactly what a reviewer console needs. That
+        breadth is only safe while it is read-only, so the grant verbs are asserted rather than
+        assumed: every ``GRANT ... TO riskiq_analyst`` in any revision must be ``SELECT`` alone.
+        """
+        assert "GRANT SELECT ON transactions, accounts TO riskiq_analyst" in migration_sql
+        assert "GRANT SELECT ON audit_log TO riskiq_analyst" in migration_sql
+
+        # SCHEMA grants are excluded: USAGE on a schema confers no access to any object in it,
+        # it only makes the schema's contents nameable, and without it every table grant below
+        # would be unusable.
+        granted = re.findall(
+            r"GRANT ([A-Z, ]+) ON (?!SCHEMA\b)[\w, ]+ TO riskiq_analyst", migration_sql
+        )
+        assert granted, "no analyst table grant found; the role would be inert"
+        for grant in granted:
+            verbs = {verb.strip() for verb in grant.split(",")}
+            assert verbs == {"SELECT"}, f"riskiq_analyst is granted {verbs}, not SELECT alone"
+
+
+class TestAuditLogIsAppendOnly:
+    """security-checklist section 7: no UPDATE or DELETE path may exist for a decision row."""
+
+    def test_no_update_or_delete_policy_exists(self, migration_sql: str) -> None:
+        """A policy is what permits an operation under forced RLS. Absent policy, absent path."""
+        assert not re.search(r"CREATE POLICY[^;]*?ON audit_log\s+FOR UPDATE", migration_sql)
+        assert not re.search(r"CREATE POLICY[^;]*?ON audit_log\s+FOR DELETE", migration_sql)
+
+    def test_no_update_or_delete_grant_exists(self, migration_sql: str) -> None:
+        """Belt and braces: the grant is the other half of the permission."""
+        grants = re.findall(r"GRANT ([A-Z, ]+) ON audit_log", migration_sql)
+        for grant in grants:
+            verbs = {verb.strip() for verb in grant.split(",")}
+            assert verbs <= {"SELECT", "INSERT"}, f"audit_log grants {verbs}"
+
+    def test_insert_policy_is_account_scoped(self, migration_sql: str) -> None:
+        """A caller must not be able to forge a decision against an account it does not hold."""
+        assert re.search(
+            r"CREATE POLICY audit_log_app_insert_own_account ON audit_log\s+"
+            r"FOR INSERT TO riskiq_app\s+"
+            r"WITH CHECK \(account_id = current_setting\('app\.current_account_id', true\)\)",
+            migration_sql,
+        )
+
+    def test_degraded_rows_must_record_a_reason(self, migration_sql: str) -> None:
+        """An unreconstructable audit row defeats the table's only purpose."""
+        assert "ck_audit_log_degraded_has_reason" in migration_sql
+
+    def test_audit_log_carries_an_account_for_the_policy_to_filter_on(self) -> None:
+        assert "account_id" in audit_log_table().columns
 
 
 class TestMetadataRegistration:

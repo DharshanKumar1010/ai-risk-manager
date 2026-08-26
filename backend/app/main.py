@@ -3,12 +3,70 @@
 Run locally with::
 
     uvicorn app.main:app --reload
+
+Three things happen here that are worth reading rather than skimming.
+
+**Models load at startup, not per request and not at import.** Per request would put a 13 MB
+booster read on the latency budget. At import would make this module unimportable wherever the
+artefacts are absent, which is most of CI and every lint run. The lifespan hook is the one
+place with both a running process and permission to do slow work.
+
+**A missing model is not a failed startup.** ``POST /score`` returns 503 and ``/health`` keeps
+answering, so an orchestrator does not restart-loop a container whose only problem is an
+unmounted volume. The failure is logged at ``error`` with the exception type, because a service
+that quietly serves 503 forever is worse than one that crashes.
+
+**Unhandled exceptions never reach the caller.** The handler below returns a fixed body and
+logs the detail server-side — security-checklist item 4.4, and the reason FastAPI's default
+behaviour is not sufficient here: ``debug=True`` in a misconfigured deployment would otherwise
+put a traceback, and the query that produced it, in a response body.
 """
 
-from fastapi import FastAPI
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import audit, health, rings, score, transactions
 from app.config import Settings, get_settings
+from app.core.rate_limit import build_rate_limiter
+from app.core.serving import ModelBundle, shutdown_tier3_executor
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Load models on startup and release the limiter's connections on shutdown."""
+    settings: Settings = application.state.settings
+    try:
+        application.state.model_bundle = ModelBundle.load(settings)
+        logger.info(
+            "loaded scoring models: %s",
+            ", ".join(
+                f"{layer}={model_id}"
+                for layer, model_id in sorted(application.state.model_bundle.model_versions.items())
+            ),
+        )
+    except (FileNotFoundError, RuntimeError, ValueError, OSError) as exc:
+        # Deliberately not fatal. See the module docstring.
+        application.state.model_bundle = None
+        logger.error(
+            "scoring models failed to load (%s: %s); /score will return 503",
+            type(exc).__name__,
+            exc,
+        )
+
+    try:
+        yield
+    finally:
+        limiter = getattr(application.state, "rate_limiter", None)
+        if limiter is not None:
+            await limiter.close()
+        shutdown_tier3_executor()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -25,7 +83,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=cfg.api_title,
         version=cfg.api_version,
         description="Real-time fraud, chargeback and abuse-ring detection.",
+        lifespan=lifespan,
     )
+
+    # Settings live on application state so that request-scoped code — token verification in
+    # particular — reads the configuration this app was built with rather than the process
+    # singleton. Without it a test's signing key would be silently inert.
+    application.state.settings = cfg
+    application.state.rate_limiter = build_rate_limiter(cfg)
+    application.state.model_bundle = None
+
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(cfg.cors_allow_origins),
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+
+    @application.exception_handler(Exception)
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        """Return a fixed body for anything unhandled, and log the detail server-side."""
+        logger.exception("unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"},
+        )
 
     application.include_router(health.router)
     application.include_router(score.router)

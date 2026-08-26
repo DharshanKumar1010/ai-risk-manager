@@ -24,6 +24,63 @@ docker compose up
 | Postgres | `localhost:5432`               |
 | Redis    | `localhost:6379`               |
 
+## API
+
+Every route except `/health` requires a bearer token, and permissions come from the token's
+`scopes` claim — never from anything in the request. Full schemas at `/docs`.
+
+| Method | Path | Scope required | Returns |
+|--------|------|----------------|---------|
+| `GET`  | `/health` | — | Liveness. Checks no dependency by design. |
+| `POST` | `/score` | `score:write` | The decision, and an audit handle. |
+| `GET`  | `/transactions` | `transactions:read` | The caller's scored transactions. |
+| `GET`  | `/audit/{transaction_id}` | `audit:read` | Every recorded decision for one transaction. |
+| `GET`  | `/audit/entry/{audit_id}/explain` | `explain:read` + `analyst` | Feature attribution. Analysts only. |
+| `GET`  | `/rings` | `rings:read` + `analyst` | Flagged abuse rings and their membership. |
+
+`POST /score` takes **raw transaction fields**, never an engineered feature vector. The server
+assembles the vector from the payload, the account's own history, and the fitted encoders — an
+endpoint accepting a caller-supplied vector would let that caller choose its own score. The 22
+derived features are rejected by name if supplied.
+
+### What `/score` deliberately does not return
+
+The response carries the decision and an opaque `audit_id`, and nothing else quantitative. No
+calibrated probability, no operating threshold, no expected-cost arms, no feature attribution
+— and no coarse risk band either. Each of those, combined with the amount, lets a caller
+binary-search the largest transaction that evades review at a given risk score, and coarsening
+a monotone score into bands does not prevent that search, it only slows it by a constant.
+
+All of it is recorded in the audit row. Attribution is served to analysts at
+`/audit/entry/{id}/explain`; the cost arms are served nowhere, because the sign of the expected
+saving from blocking *is* the decision boundary.
+
+The decision itself is the irreducible disclosure — a scoring API has to tell the caller what
+happened to the transaction. That residual is bounded by authentication and the rate limiter.
+
+### Getting a token
+
+There is no signup flow — tokens are minted server-side by
+`app.core.security.create_access_token`. For a local demo:
+
+```bash
+cd backend && python -c "
+from app.config import get_settings
+from app.core.security import create_access_token
+print(create_access_token('demo-merchant', account_id='acct-1',
+                          scopes=('score:write',), settings=get_settings()))
+"
+```
+
+### Before the first score
+
+`/score` returns 503 until it can load its models, and models are gitignored build outputs.
+The serving encoders are rebuilt from the processed parquet once per corpus:
+
+```bash
+cd backend && python -m app.data.serving_encoders --source-dataset ieee_cis
+```
+
 ## Local development without Docker
 
 ```bash

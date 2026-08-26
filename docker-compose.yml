@@ -11,10 +11,17 @@ services:
       POSTGRES_USER: riskiq
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riskiq_local_dev}
       POSTGRES_DB: riskiq
+      # Read by infra/postgres-init/10-app-roles.sh on first boot, which is what gives the
+      # least-privilege roles a credential. The migration grants them LOGIN and defines the
+      # policies; no password may live in tracked source, so it arrives from here.
+      RISKIQ_APP_PASSWORD: ${RISKIQ_APP_PASSWORD:-riskiq_app_local_dev}
+      RISKIQ_PIPELINE_PASSWORD: ${RISKIQ_PIPELINE_PASSWORD:-riskiq_pipeline_local_dev}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty data directory. Delete the pgdata volume to re-run it.
+      - ./infra/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U riskiq -d riskiq"]
       interval: 5s
@@ -43,11 +50,24 @@ services:
     environment:
       ENVIRONMENT: local
       DEBUG: "true"
-      DATABASE_URL: postgresql+asyncpg://riskiq:${POSTGRES_PASSWORD:-riskiq_local_dev}@postgres:5432/riskiq
+      # Connects as riskiq_app, NOT as the riskiq superuser. This is what makes the Phase 1
+      # row-level-security policies effective: a superuser, and the owner of a table, bypass
+      # RLS unconditionally, so the policies were correctly defined and enforced against
+      # nobody until Phase 7 repointed this. riskiq_app holds SELECT on the corpus tables and
+      # SELECT+INSERT on audit_log, and nothing else.
+      DATABASE_URL: postgresql+asyncpg://riskiq_app:${RISKIQ_APP_PASSWORD:-riskiq_app_local_dev}@postgres:5432/riskiq
+      # Migrations create tables, roles, grants and policies, none of which riskiq_app may do.
+      # Kept separate so a failing migration is never "fixed" by pointing the application at
+      # the superuser, which would disable every RLS policy while leaving them in the schema.
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://riskiq:${POSTGRES_PASSWORD:-riskiq_local_dev}@postgres:5432/riskiq
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-placeholder-change-me-before-deploy}
       DATA_DIR: /data
       REPORTS_DIR: /notebooks
+      # Set explicitly: the default is derived from the source tree layout, which does not
+      # exist inside the container, where /srv is the backend directory and there is no repo
+      # root above it.
+      MODELS_DIR: /models
     ports:
       - "8000:8000"
     volumes:
@@ -58,6 +78,9 @@ services:
       - ./data:/data
       # The pipeline writes its data-quality report here.
       - ./notebooks:/notebooks
+      # Trained weights are gitignored build outputs, so they are mounted rather than COPYed,
+      # exactly as the datasets are. Read-only: serving loads them and never writes them.
+      - ./models:/models:ro
     depends_on:
       postgres:
         condition: service_healthy

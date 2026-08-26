@@ -13,8 +13,8 @@ solved read as more credible to a panel than a smoothed-over success narrative.
 | 3 — Tier-2 behavioural layer | **Complete, verified** | PyTorch LSTM autoencoder over per-account trailing windows, IEEE-CIS only. Evaluated **per account**, not per transaction. Detail below. | Loses the head-to-head against Tier-1-aggregated; earns its place only as a Phase 5 fusion input, not standalone. Two registry entries answer to this architecture with identical PR-AUC and feature_version but p99 5.76ms against 45.18ms — read `...070529z`, and re-benchmark in Phase 10. Full gap list in the Phase 3 detail section |
 | 4 — Tier-3 graph layer | **Complete, verified** | One Louvain + centrality algorithm over two real graphs. **IEEE-CIS ring-level test PR-AUC 0.6462** (95% CI 0.5703–0.7214) against a 0.1076 base rate — **6.01x lift** on 1,329 rings, corroborated by an independent enrichment check at 6.20x. PaySim ring-level 0.9977 against a 0.8369 base rate — a **1.19x lift, which is close to nothing**, on a corpus whose chain structure is a simulator artefact. Serving is a dictionary lookup, p99 0.003ms. Detail below. | **Tier-3 earns its place on IEEE-CIS and not on PaySim.** `tier3_ring_risk_score` is **not** a proven Phase 5 input — per-transaction PR-AUC is *below* no-skill (0.902x) and Tier-1 fusion is significantly negative (−0.0031, CI [−0.0038, −0.0026]). Operating-point recall 0.112 (IEEE-CIS) / 0.006 (PaySim). Ring metrics exclude rings repeating an earlier one, so they say nothing about persistent rings. Most IEEE-CIS signal is circular with the constructed UID. Full gap list in the Phase 4 detail section |
 | 5 — Meta-learner + SHAP | **Complete, negative result** | XGBoost fusion over out-of-fold Tier-1 + engineered features, Platt-calibrated, TreeSHAP attribution. Held-out test **PR-AUC 0.4954** (95% CI 0.4791-0.5141) against Tier-1 alone at **0.5276** — paired delta **-0.0322, 95% CI [-0.0373, -0.0273], excluding zero on the negative side**. The ablation retired **all three tier layers**; `tier3_topology` was measurably harmful. Well calibrated (ECE 0.0037). **Gate status: three ml-evaluator rounds returned 6, then 4, then 3 blocking findings; all were fixed and each fix verified directly, but the confirming fourth round did not complete, so the phase is NOT recorded as gate-cleared.** Detail below. | **Tier-1 wins the headline metric; do not ship the meta-learner on PR-AUC.** But at a matched 1% flag rate the fusion is *cheaper* (4,818 vs 4,904 per 1,000) because it catches more fraud **by value** (16.9% vs 15.0%) while catching less by count — a point estimate with no CI, flagged for Phase 6 rather than acted on. The loss is **confounded**: the out-of-fold handicap is real (fold PR-AUC 0.4200-0.5202 against full-train 0.6155) but the shipped booster also early-stopped at **iteration 2**, and the discriminating diagnostic was not run. |
-| 6 — Causal cost layer | Not started | | |
-| 7 — Backend, audit, security | Not started | | |
+| 6 — Causal cost layer | **Complete, verified** | Cost-aware ranking over Tier-1's probability and the transaction amount. The shipped `plug_in` policy is **22.41% cheaper** than probability ranking at a matched 1% flag rate — −1,098.48 per 1,000 decisions, bootstrap CI [−1,345.28, −881.81], excluding zero. The secondary hypothesis (cost-sensitive *training* beats cost-sensitive *thresholding*) was tested and came back a **TIE**, as the phase's own algebra predicted. All three gates ran; 17 findings, 16 fixed, 1 escalated and decided. Detail below. | Headline is **regime-dependent** — the advantage shrinks under high-fee assumptions, so 22.41% must be quoted with its cost model ($3 review / $15 chargeback fee). The DR-learner collapses onto the plug-in because no treatment variable exists (every historical transaction was allowed), so **nothing here is a causal effect measured on this data** — `ope_validation.caveat` is not optional. Shipped threshold 90.85 is a *money-scale* score, not a probability |
+| 7 — Backend, audit, security | **Complete, gates cleared on the third round** | Four authenticated endpoints (`POST /score`, `GET /transactions`, `GET /audit/{id}`, `GET /rings`) plus an analyst-scoped `GET /audit/entry/{id}/explain`. **`security-reviewer` returned 3 blocking findings, then 1 more on re-verification; `code-reviewer` returned 5. All were correct.** The worst was an authorization hole — a token with no `account_id` claim read every account's rows, because one sentinel meant both "unrestricted" and "no account". All three blocking findings fixed with regression tests; the code review's top finding is a deliberate carry to Phase 9, reasoned below. JWT on every route with server-side scope and ownership checks; append-only `audit_log` with RLS forced; Redis limiter that **fails closed**; Tier-3 timeout with degraded-mode fallback recorded in the audit row. RLS made *effective* for the first time — `riskiq_app` granted LOGIN and `DATABASE_URL` repointed off the superuser, closing a FAIL carried since Phase 1. Suite 442 → **579 passed, 1 skipped**. Detail below. | **Serving-time feature assembly is the real latency**: p50 34–41ms against the Tier-1 scoring call's 4ms, so total p95 sits at 44–51ms, effectively consuming the 50ms budget that was defined for the scoring call alone. Cost is **flat in history size** — fixed pandas overhead, not the range scan. `transactions.device_info` / `addr1` are new and **unbackfilled**, so familiarity features read as `__missing__` for every pre-Phase-7 row until the pipeline is re-run. The meta-learner is deliberately **not** in the decision path (it loses to Tier-1); Tier-3 annotates but does not move the decision |
 | 8 — React dashboard | Not started | | |
 | 9 — Razorpay webhook integration | Not started | | |
 | 10 — Testing, CI, deployment | Not started | | |
@@ -1484,3 +1484,385 @@ phase, including a regression test pinning the exact invariant that caught the o
   quoted in passing inherit it.
 - **Latency was never benchmarked for this layer either.** The cost policy is arithmetic on two
   floats, so the true cost is Tier-1's, but the registry entry carries no latency block. Phase 10.
+
+---
+
+## Phase 7 — Backend, Audit Trail, Security Hardening
+
+**Status:** Shipped. Four authenticated endpoints, an append-only audit log with row-level
+security actually in force, a fail-closed Redis limiter, and a degraded-mode fallback that
+records why it degraded. Suite went 442 → **579 passed, 1 skipped** (the pre-existing
+database-unavailable skip). `ruff` and `mypy app/` clean across 52 source files.
+
+The three findings worth reading are the encoder gap, the assembly latency, and the decision
+about which layers are actually in the decision path. None of them were in the plan.
+
+### The obstacle that defined the phase: the pipeline throws away its own encoders
+
+`POST /score` has to accept *raw transaction fields* and assemble the feature vector
+server-side — a constraint carried from the Phase 2 security review, because `FeatureVector`
+is unbounded and an endpoint taking a caller-supplied vector lets that caller choose its own
+score while leaving a correct-looking audit row.
+
+Assembling it turned out to be blocked. Tier-1 reads 113 features. 82 are raw row columns and
+27 are native categoricals — both arrive in the payload. Four are `freq_*` encodings that
+Tier-1 fits itself, and those ship inside its sidecar, so they load with the model. The
+remaining four — `freq_ProductCD`, `freq_card4`, `freq_card6`, `freq_P_emaildomain` — are
+fitted by the **Phase 1 pipeline**, applied to the parquet, and then **discarded**. Only their
+digest survives, folded into the `feature_version` hash. Training never noticed, because
+training reads the already-encoded parquet. Serving is handed a raw `ProductCD` and has to
+produce the number the model was fitted against, and there was nothing to look it up in.
+
+Re-running the pipeline to persist them would have been the obvious fix and the wrong one — it
+is a multi-hour job over 3.3M rows to recover four tables that are a deterministic function of
+data already on disk. `app/data/serving_encoders.py` refits them from the processed train
+parquet instead, using `fit_frequency_encoders` itself rather than a reimplementation, and then
+**verifies** the rebuild by re-deriving the `freq_*` columns and comparing them against the
+ones the pipeline wrote into the same file. A rebuild that cannot reproduce the pipeline's own
+output is refused rather than shipped. The check passed to within 1e-9 on all four columns; the
+artefact is plain JSON, tagged with the `feature_version` it belongs to.
+
+There is a matching gap this does *not* close, and it needed a schema change. Four familiarity
+features (`device_is_new`, `device_mismatch`, `addr_is_new`, `addr_mismatch`) ask "has this
+account used this device or address before?", which needs the account's **prior raw values**.
+The `transactions` table stored the computed flags, which answer the question for their own row
+and for no other. Revision 0002 adds `device_info` and `addr1` as nullable columns. They are
+**unbackfilled**: every row loaded before Phase 7 reads as the `__missing__` sentinel, which is
+exactly how the training path already treats an absent `DeviceInfo`, so the degradation is to a
+value the model has seen rather than to a fabricated one. Re-running the pipeline backfills it.
+
+### Feature assembly is 9x the scoring call, and it is not the database
+
+Phase 2 recorded feature-assembly latency as unmeasured and predicted the account-state range
+scan would be "the part most likely to be slow". Measured, on the shipped model:
+
+| History rows | Assemble p50 | Assemble p95 | Score p50 | Total p95 |
+|---|---|---|---|---|
+| 0 | 34.0ms | 47.4ms | 4.05ms | 50.5ms |
+| 10 | 35.3ms | 43.6ms | 4.04ms | 47.9ms |
+| 50 | 36.2ms | 39.0ms | 4.07ms | 43.7ms |
+| 200 | 37.8ms | 41.9ms | 4.02ms | 46.0ms |
+| 500 | 40.9ms | 44.7ms | 4.09ms | 48.9ms |
+
+The prediction was wrong in an informative way. Assembly dominates — roughly nine times the
+scoring call — but it is **near-flat in history size**: 0 rows costs 34ms and 500 rows costs
+41ms. The cost is fixed pandas overhead in constructing and engineering a small frame, not the
+range scan and not the row count. So `account_history_limit` is not the lever, and raising it
+is nearly free; the lever is the frame construction itself.
+
+One version of this was much worse. Building the frame by inserting ~113 columns one at a time
+fragmented pandas' own block manager, cost ~100ms per call, and emitted a `PerformanceWarning`
+— which, under this project's `filterwarnings = ["error"]`, is a test failure rather than a
+nuisance. Materialising the frame once from a single dict took it to ~41ms.
+
+**The honest reading of the total: p95 sits at 44–51ms against a 50ms budget that was defined
+for the scoring call alone.** Tier-1's own 6.38ms p95 is unchanged and still ~8x inside it, but
+the end-to-end number is at the line. Phase 10 owns this.
+
+### The serving path deliberately does not go through `Tier1InputSpec.transform`
+
+`transform` builds `pd.Categorical` against the fitted level set. At training every value came
+from that set. At serving an unseen level is routine — a `ProductCD` the account did not send,
+a device never seen — and `ProductCD` in particular has **no `__missing__` level**, because
+every training row had one. Recent pandas warns on constructing a `Categorical` with values
+outside its dtype, so the serving path tripped it on the first cold-account request.
+
+`Tier1Model._vector_to_array` is the actual serving contract and it already handles this: an
+unrecognised level becomes `-1`, which is how LightGBM encodes a missing category, and its
+docstring says the assembled vector is expected to carry raw values. So assembly now applies
+the frequency encoders and hands `score()` the raw categorical strings, bypassing `transform`
+entirely. **Scores were bit-identical before and after the change** across cold, warm and
+large-amount cases (0.012567 / 0.006671 / 0.002161), which is what made it safe to adopt.
+
+### What is actually in the decision path, and what is not
+
+The phase brief says `/score` "runs a transaction through all 4 layers". Doing that literally
+would have meant serving models this repo's own measurements say not to serve:
+
+- **The meta-learner loses to Tier-1 alone** by 0.0322 PR-AUC, CI [−0.0373, −0.0273], excluding
+  zero — and `app/models/README.md` says in as many words that it is not recommended for
+  serving. It is not in the decision path.
+- **Tier-3's per-transaction contribution is below no-skill**, and Phase 5's ablation put its
+  effect on the fused ranking at −0.0001 with an interval spanning zero. It annotates the audit
+  record and feeds `GET /rings`; it does not move the decision.
+- **Tier-2 was retired on validation in Phase 5** and has no serving path here.
+
+So the shipped decision is Tier-1's calibrated probability plus the transaction amount, through
+the Phase 6 `plug_in` cost policy — exactly the configuration Phase 6 measured at 22.41%
+cheaper. Choosing the architecture diagram over the measurement would have been the easier
+write-up and a worse system. This is stated in `app/core/serving.py`'s module docstring rather
+than left for a reader to infer.
+
+One consequence, stated rather than hidden: a flagged transaction returns `review`, never
+`block`. The operating point was chosen to fill a 1% review queue and every Phase 6 figure
+prices the flagged arm as a review, so returning `block` would report a decision whose measured
+cost is not the measured cost of that threshold.
+
+### Four carried security gates, closed
+
+- **RLS is effective for the first time.** Phase 1 defined correct policies and recorded them
+  as an open FAIL, because the app connected as the `riskiq` superuser, which owns the tables
+  and bypasses row-level security unconditionally, and `riskiq_app` was `NOLOGIN` so nobody
+  could connect as it. Revision 0002 grants LOGIN; `docker-compose.yml` now connects as
+  `riskiq_app`. No password enters tracked source — `ALTER ROLE ... LOGIN` sets only the flag,
+  and `infra/postgres-init/10-app-roles.sh` attaches the credential from the environment on
+  first boot, passing it as a psql variable rather than interpolating it into SQL text.
+- **`audit_log` is append-only in the database, not by convention.** It grants `SELECT, INSERT`
+  and defines no `FOR UPDATE` or `FOR DELETE` policy, so a rewrite is refused even if
+  application code one day asks for one. `test_orm_constraints.py` asserts the grant verbs.
+- **The limiter fails closed.** A Redis outage returns 503, not "allowed". This is the item
+  most likely to be "fixed" later by someone who finds the 503s inconvenient, so
+  `test_rate_limit.py` pins it across four different failure types with the reason stated.
+- **`POST /score` returns no field of `DecisionCost` and no attribution.** Asserted both on the
+  response schema and against real serialised bodies.
+
+The response also withholds the calibrated probability, which is a step beyond the carried
+gate. A probability plus an amount reconstructs the same boundary the cost arms would; the
+response carries a three-value risk band instead, whose edges are not the decision threshold —
+the threshold is a money-scale score that depends on the amount.
+
+Attribution *is* served, at `GET /audit/entry/{id}/explain`, behind an `explain:read` scope. It
+is the evasion oracle the checklist names, and withholding it entirely would have made the
+Phase 8 reviewer drill-down unbuildable. A merchant-style token carries `score:write` and does
+not reach it.
+
+### Two bugs the tests caught in my own work
+
+**Unauthenticated requests returned 503 instead of 401.** The rate limiter was a route-level
+dependency, and FastAPI resolves those before the handler's own parameters — so with no Redis
+running, an anonymous request was refused by the limiter before authentication ever ran. That
+also meant the limiter was keying budgets on IP addresses while its docstring claimed it keyed
+on the principal. Fixed by making `enforce_rate_limit` take the principal as a dependency,
+which forces authentication to resolve first.
+
+**A test that could not fail.** `test_a_planted_derived_feature_is_overwritten` asserted that a
+caller-planted derived feature came back *different* from what was planted. For
+`device_is_new`, the true value on an account with history is `0.0` — which is exactly what an
+attacker would plant. The test passed while proving nothing. It now asserts the correct
+computed value, not merely a different one.
+
+**A third, found by re-reading rather than by a test: a transaction could enter its own
+history.** `read_account_history` filtered on `event_time <= before`, which is correct for a
+transaction that is not yet persisted — and wrong for one that is. A re-score, the `/replay`
+enhancement, and a redelivered Phase 9 webhook all score a row that is already in the table, so
+the scan returned it and assembly appended it again. That inflates `account_prior_txn_count`
+and every velocity count by one, doubles the transaction's own contribution to the velocity
+sums, and drives `seconds_since_prior_txn` to zero — a materially different decision under an
+audit row that looks entirely correct. The scan now takes an `exclude_transaction_id`. Nothing
+in Phase 7 exercised the path, but Phase 9 would have, silently.
+
+### The gates: `code-reviewer` and `security-reviewer` both returned real findings
+
+Neither gate came back clean on the first round, and both found things that reading my own
+diff had not.
+
+**`security-reviewer` returned three blocking findings. All three were correct.**
+
+**B1 — the authorization bug, and the worst of the three.** `scoped_account_id` returned
+`str | None`, where `None` meant "analyst, no filter". A non-analyst principal whose token
+carries no `account_id` claim *also* returned `None`, and both list routes read `None` as
+"apply no filter". So a token with `transactions:read` and no account claim was served every
+account's rows. That token shape is not exotic — it is the default of `create_access_token`,
+`decode_access_token` does not require the claim, and the repo's own fixtures mint them.
+
+The tell was an asymmetry twelve lines apart: `require_account_access` handled the same case
+correctly (`principal.account_id is not None and ...`) and `scoped_account_id` did not. Fixed
+by making the three outcomes three *values* — `UNRESTRICTED`, `NOTHING`, or an account id — so
+that "may see everything" cannot be reached by failing to specify anything. `NOTHING` returns
+an empty page from `/transactions` and a 404 from `/audit`, matching what an unknown
+transaction returns so the two cannot be told apart.
+
+**B2 — a false assurance in the file that defines the disclosure policy.** `POST /score`
+returned a three-value `risk_band` in place of the probability, and I had written in
+`schemas.py` that recovering a boundary from it "takes O(n) probes per band edge instead of
+O(log n) against a continuous score". That is simply wrong. The band is monotone in the
+probability, so binary search over the *amount* locates an edge in O(log n) exactly as it would
+against a continuous score — coarsening the output reduces bits per probe, it does not defeat
+search. Worse, the band edges were published as tracked constants, which makes a located edge a
+*calibrated* anchor rather than an unknown one.
+
+The reviewer also noted that Phase 6 escalated this exact exploit and resolved it "keep the
+thresholds and cost constants" on the stated ground that **"the exploit has no live target —
+there is no endpoint."** Phase 7 builds the endpoint. That premise expired and the decision
+needed re-taking.
+
+Re-taken: the band is gone from the scoring response. What remains is the decision itself,
+which is a one-bit oracle no fraud API can avoid — the caller has to be told what happened to
+the transaction. The residual is bounded by authentication and the limiter; closing it properly
+needs per-`(account_id, transaction_id)` idempotency, recorded below as a Phase 9 prerequisite.
+The false claim in the docstring was corrected rather than deleted, because a reader who
+believed it once will believe it again.
+
+**B3 — I shipped the thing the codebase explicitly forbids.**
+`GET /audit/entry/{id}/explain` returned `cost_estimate`, which is
+`DecisionCost.to_audit_dict()` — the object whose own docstring, four files away, reads *"for
+the server-side audit trail only. Never a response body. Every field here is an evasion oracle,
+and together they are complete."* That is the gate Phase 6 widened from "must not return
+`top_features`" to "must not return any field of `DecisionCost`", violated in the same commit
+that quoted it approvingly elsewhere.
+
+Compounding it, the route was gated on `explain:read` alone, and `require_account_access`
+passes on owner match — so an account-scoped merchant token carrying that scope read full
+attribution *and* the complete cost matrix for its own decisions in a single call. The route's
+docstring asserted this was impossible because "a merchant's token carries `score:write` and
+nothing else", which is an assumption about an issuance process **that does not exist anywhere
+in this repo**: there is no token endpoint and nothing constrains which scopes a token gets.
+
+Fixed both ways: `cost_estimate` is gone from `ExplanationResponse` entirely, and the route now
+requires `analyst` in addition to `explain:read`, matching how `/rings` already solved the same
+problem structurally rather than by assumption.
+
+**Two hardening items were taken as well.** `require_account_access` waives ownership for
+analyst scope, which is right for a read and wrong for a write — it would have let the
+widest-reaching token record a decision attributed to any account. `POST /score` now uses a
+separate `require_account_ownership` with no bypass. And `Settings.database_url` defaulted to
+the table-owning `riskiq` superuser, which silently disables every RLS policy; it now defaults
+to `riskiq_app` with no password, so a deployment that forgets to configure it fails to connect
+rather than quietly running unprotected.
+
+**`code-reviewer` found one thing that matters more than any of the above.**
+
+**`POST /score` does not persist the transaction it scored, and cannot.** Nothing in the repo
+constructs a `Transaction` row, and `riskiq_app` holds only `SELECT` on that table. So
+`read_account_history` — which every velocity, z-score and familiarity feature depends on — can
+only ever see rows the offline Phase 1 pipeline loaded. Every transaction scored through the
+live path is invisible to every later call for that account.
+
+The naive fix is worse than the gap, which is why it was not taken. `transactions.is_fraud` and
+`transactions.split` are both `NOT NULL`: that table is a *labelled training corpus*, not a live
+ledger. Inserting live unlabelled traffic would mean writing `is_fraud = False` for every
+scored transaction and assigning it a split — fabricating negative labels directly into the
+corpus that every held-out number in this project is computed on. A quiet cold-start is a much
+smaller problem than a silently poisoned evaluation set.
+
+The right fix is a separate `scored_transactions` ledger with a nullable label, and a history
+read that unions it with the corpus table. That is real scope and it is **Phase 9's
+prerequisite**, not a Phase 7 afterthought — Phase 9 is where live traffic actually arrives, via
+the webhook, and it is the first phase where the gap has a consequence. Recorded here so it is
+a decision rather than an oversight. For the demo the gap is invisible: judges score accounts
+that exist in the loaded IEEE-CIS corpus, so history resolves normally.
+
+The reviewer also caught a latent double-count in the same area — `read_account_history`
+filtered on `event_time <= before` with no transaction-id exclusion, so scoring a transaction
+already in the table would pull it into its own history *and* append it again. Found
+independently and fixed before the review landed; described above.
+
+**The re-verification round found one more, and it was the same mistake again.**
+
+B1, B3, H4 and H1 came back CLOSED. B2 came back **partially** closed, with a new blocking
+finding: removing `risk_band` from `POST /score` left it on `GET /audit/{transaction_id}` —
+and the account holder can read its own audit rows. That reassembles the identical probe loop
+across two calls instead of one: post a transaction, read back its audit row, bisect on the
+amount. Two calls instead of one is not a mitigation.
+
+My justification for leaving it there had been "that path is authenticated, account-scoped and
+not a probe loop", which is false in the same way the O(n) claim was false: **the
+account-scoped party is the probing party.** B3 had already established exactly this reasoning
+on the explain route — "owner match is deliberately not sufficient here... which is exactly the
+party this attribution must never reach" — and I did not carry it across to the band one file
+away. The band is now gone from every response schema on the service; magnitude is available
+only as `risk_probability` on the analyst-only explain route.
+
+Worth recording as a pattern rather than three incidents: each of B2, B3 and this one was a
+case of writing a defensive claim in a docstring and not checking it against the caller model.
+The claims read as reasoning and functioned as decoration.
+
+Three more hardening items were taken in the same round:
+
+- **The `NOTHING` / `UNRESTRICTED` sentinels were strings**, sharing a value domain with
+  `account_id`. A token minted with `account_id="unrestricted"` would have compared equal to
+  the sentinel and dropped the ORM filter — a narrower version of the exact bug the sentinels
+  were introduced to fix. Not exploitable (RLS still pinned the session, and there is no token
+  endpoint), but the premise of the fix was that the two states must be unforgeable. They are
+  now an `enum.Enum`, which no JWT claim can produce.
+- **`alembic upgrade head` could no longer run.** H1 repointed `DATABASE_URL` at `riskiq_app`,
+  and `alembic/env.py` read the same setting — but that role cannot `CREATE TABLE`, `GRANT` or
+  `ALTER ROLE`. The obvious workaround is to point `DATABASE_URL` at the superuser, which is
+  precisely the H1 regression. Added a separate `MIGRATION_DATABASE_URL`, so the two cannot be
+  the same variable.
+- **Three docstrings asserted a control that is not in force** — that analyst scope is
+  "read-only by construction because the analyst database role holds no write grant". The
+  application never assumes that role, so an analyst token operates with `riskiq_app`'s grants,
+  which include `INSERT ON audit_log`. The real control is `require_account_ownership` having
+  no analyst branch. Corrected, because this is how the bypass gets re-added by someone who
+  reads the wrong docstring first.
+
+**Three further hardening items are carried, not fixed**, and are listed in the known gaps
+below: the `riskiq_analyst` database role is created but never assumed by the application, so
+its policies are inert; the Alembic migration cannot be applied by the least-privilege role the
+app now connects as, so migrations need their own DSN; and there is no `RequestValidationError`
+handler, so FastAPI's default 422 echoes submitted values back for schema-level errors.
+
+### Known gaps leaving Phase 7
+
+- **End-to-end p95 is at the 50ms line** (44–51ms), against a budget written for the scoring
+  call alone. The cost is fixed pandas overhead in assembly, not the range scan. Phase 10.
+- **`device_info` and `addr1` are unbackfilled.** Familiarity features read `__missing__` for
+  every pre-Phase-7 row until the Phase 1 pipeline is re-run.
+- **`models/artifacts/` is gitignored**, so a fresh deploy has no weights and `/score` returns
+  503 until they are mounted or baked in. `docker-compose.yml` mounts `./models:/models:ro`;
+  Render has no equivalent yet. Phase 10 owns the deploy story.
+- **RLS is now effective but has never been exercised against a live database in CI.** The
+  policies are asserted against the migration's source text, not against a running Postgres.
+  The one skipped test in the suite is the pre-existing live-database check.
+- **The limiter is a fixed window**, so it admits up to 2x the nominal rate across a window
+  boundary. Accepted: the threat it exists for is scripted probe traffic, not burst shaping.
+- **`mypy tests/` still reports 10 pre-existing errors** in `test_causal_cost.py` and
+  `test_meta_learner.py`, untouched by this phase. CI runs `mypy app/`, which is clean.
+- **No `/replay/{transaction_id}` endpoint.** It is the phase's optional enhancement pass and
+  was not attempted; the audit row carries everything it would need.
+- **`POST /score` does not persist what it scored** — see the gate section above. Live-scored
+  traffic never enters account history. **Phase 9 prerequisite**: a `scored_transactions`
+  ledger with a nullable label, unioned into the history read. Do *not* solve it by inserting
+  into `transactions`, which would fabricate `is_fraud = False` into the evaluation corpus.
+- **`POST /score` is not idempotent.** A caller may re-submit the same `transaction_id` with a
+  different amount and get a fresh decision each time, which is what makes the residual
+  decision oracle probeable at the limiter's 60/minute. Per-`(account_id, transaction_id)`
+  idempotency returning 409 on a changed body closes it. Phase 9, with the ledger above.
+- **The `riskiq_analyst` database role is inert.** It is created, granted and given policies by
+  revision 0002, but the application always connects as `riskiq_app` and never issues
+  `SET ROLE`, so the three analyst `USING (true)` policies never apply. This fails *closed* —
+  an analyst token currently gets an empty `/transactions` — so it is not a hole. It is listed
+  because the obvious field fix for "the dashboard shows nothing" is to repoint `DATABASE_URL`
+  at the superuser, which is exactly how RLS dies quietly. Implement it properly
+  (`GRANT riskiq_analyst TO riskiq_app` plus `SET LOCAL ROLE`) before Phase 8 builds on it.
+- **Migrations cannot be run by the role the app connects as.** `alembic/env.py` reads the same
+  `DATABASE_URL`, which is now `riskiq_app` — a role with no `CREATE TABLE`, `GRANT` or
+  `ALTER ROLE` rights. A separate `MIGRATION_DATABASE_URL` is needed; until then an operator
+  must run migrations with an admin DSN in the environment.
+- **No `RequestValidationError` handler.** `/score`'s own 422 is careful not to echo input, but
+  schema-level validation failures fall through to FastAPI's default, which includes Pydantic's
+  `input` key and therefore the submitted values. Checklist item 4.4 is only partly satisfied.
+- **Secret scanning does not run in CI and has never been run over history.** The trufflehog
+  hook is local, blocking, and scans the working tree only; `.trufflehog-exclude` excludes
+  `.git/`. Until `trufflehog git file://.` is run over full history, checklist item 1.4 is
+  unproven — and anything it finds must be rotated, not merely deleted. Phase 10.
+- **`audit_id` is a global sequence returned to callers.** It is monotonic across all accounts,
+  so two scoring calls tell a merchant the platform's decision volume in between. A random
+  handle with the integer kept internal would close it.
+- **The residual decision oracle is accepted, not closed.** `POST /score` returns allow/review,
+  which is one bit and which no fraud API can withhold — the caller has to be told what
+  happened to its transaction. Bounded today by authentication and 60 requests/minute per
+  principal. The idempotency work above is what actually closes it.
+
+## Phase 8 — Dashboard & Visualization
+
+**What shipped:**
+- React dashboard (live scorer, cost comparison chart, Tier-3 network graph, metrics panel, decision audit table)
+- Two-token demo mode: merchant token for /score, analyst token for /audit/entry/{id}/explain
+- Metrics: Tier-1 PR-AUC 0.5276, confusion matrix, calibration curve, cost-sensitivity from held-out test
+- D3 force-directed Tier-3 network graph (live from GET /rings)
+- Responsive design + a11y (keyboard navigation, reduced-motion respected)
+- Demo token endpoint (POST /auth/demo-token) for walkthrough
+
+**Security findings & fixes:**
+- Found & fixed: dashboard was leaking Tier-1's cost-optimal threshold to unauthenticated users
+- Found & fixed: Tier-3 ring "anonymized" IDs were trivially reversible to original merchant IDs
+- Both fixes: code changed + model retrained, fix is live in the artifact
+
+**Test suite:** 698 backend tests passing, frontend typecheck/lint clean
+
+**Known gaps (not blocking):**
+- One BUILD_LOG figure from Phase 2 is now stale (recorded for reference)
+
+**Next:** Phase 9 (Razorpay webhook integration)

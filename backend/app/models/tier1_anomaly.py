@@ -359,6 +359,86 @@ class Tier1Model:
         )
         return artifact
 
+    @classmethod
+    def load(
+        cls,
+        model_id: str,
+        directory: Path,
+        feature_version: str | None = None,
+    ) -> "Tier1Model":
+        """Rebuild a model from its artefact and sidecar.
+
+        The inverse of :meth:`save`. Phase 2 only needed ``save``, so the reconstruction lived
+        inline in ``meta_features.load_registered_tier1``; Phase 7 serves from it on every
+        request, so it belongs on the type.
+
+        **Only the LightGBM path is loadable.** Isolation Forest persists through joblib, and
+        unpickling executes arbitrary code — this method is reachable from an HTTP endpoint, so
+        it refuses that format outright rather than gating it on a flag someone could pass.
+        The unsupervised model stays available to offline analysis, which loads it deliberately
+        and not from a request path.
+
+        Args:
+            model_id: Bare registry identifier. Becomes a path only through
+                :func:`app.ml.registry.artifact_path`, which proves it cannot escape
+                ``directory`` — it arrives from ``registry.json``, which is file content and
+                therefore not a trusted identifier at the point it becomes a path.
+            directory: The artefact directory.
+            feature_version: When given, the hash the registry records for this model. The
+                rebuilt spec is required to hash to it.
+
+        Returns:
+            The reconstructed model.
+
+        Raises:
+            FileNotFoundError: If the sidecar or the booster is absent.
+            ValueError: If the sidecar describes a model this path refuses to load.
+            RuntimeError: If the rebuilt spec does not hash to ``feature_version``. Every
+                provenance claim downstream of this object rests on that hash, so a mismatch
+                is refused rather than recorded.
+        """
+        import lightgbm as lgb
+
+        sidecar_path = artifact_path(model_id, directory, ".meta.json")
+        booster_path = artifact_path(model_id, directory, ".txt")
+        if not sidecar_path.exists():
+            raise FileNotFoundError(f"Tier-1 sidecar not found: {sidecar_path}")
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+        algorithm = sidecar["algorithm"]
+        if algorithm != "lightgbm":
+            raise ValueError(
+                f"Tier1Model.load refuses algorithm {algorithm!r}. Only the native LightGBM "
+                "text format is loadable here: the other candidate persists through joblib, "
+                "and this path is reachable from a scoring endpoint."
+            )
+        if not booster_path.exists():
+            raise FileNotFoundError(f"Tier-1 booster not found: {booster_path}")
+
+        spec = Tier1InputSpec.from_dict(sidecar["spec"])
+        rebuilt = spec.to_feature_definition().feature_version
+        if feature_version is not None and rebuilt != feature_version:
+            raise RuntimeError(
+                f"rebuilt Tier-1 spec hashes to {rebuilt} but {feature_version} was expected "
+                f"for {model_id}. The reconstruction has drifted from what fit_tier1_input_spec "
+                "produces, so any feature_version recorded from it would be unresolvable."
+            )
+
+        normaliser = sidecar["normaliser"]
+        return cls(
+            model_id=sidecar["model_id"],
+            algorithm=algorithm,
+            spec=spec,
+            threshold=float(sidecar["threshold"]),
+            normaliser=ScoreNormaliser(
+                kind=normaliser["kind"],
+                low=float(normaliser["low"]),
+                high=float(normaliser["high"]),
+            ),
+            estimator=lgb.Booster(model_file=str(booster_path)),
+            numeric_only=bool(sidecar["numeric_only"]),
+        )
+
 
 def benchmark_latency(
     model: Tier1Model,

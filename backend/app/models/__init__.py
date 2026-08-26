@@ -8,11 +8,12 @@ The table modules are re-exported here for their side effect: importing them is 
 registers them against ``Base.metadata``, and therefore what makes them visible to Alembic
 autogeneration. ``alembic/env.py`` imports this package for exactly that reason.
 
-``transaction`` and ``account`` are implemented (Phase 1); ``audit_log`` arrives in Phase 7
-and joins this list then. Tier modules are implemented in Phases 2-6.
+``transaction`` and ``account`` are implemented (Phase 1); ``audit_log`` joined them in
+Phase 7. Tier modules are implemented in Phases 2-6.
 """
 
 from app.models.account import Account
+from app.models.audit_log import AuditLog
 from app.models.transaction import Transaction
 
-__all__ = ["Account", "Transaction"]
+__all__ = ["Account", "AuditLog", "Transaction"]

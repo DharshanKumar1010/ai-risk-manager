@@ -42,7 +42,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -51,6 +51,9 @@ import pandas as pd
 from app.data.features import feature_names_for
 from app.data.raw_spec import SourceDataset
 from app.models.tier1_features import DENIED_COLUMNS
+
+if TYPE_CHECKING:  # pragma: no cover - kept out of the runtime import graph
+    from app.models.tier1_anomaly import Tier1Model
 
 logger = logging.getLogger("riskiq.meta")
 
@@ -467,13 +470,13 @@ class RegisteredTier1:
     """The Tier-1 model as it is actually deployed, rebuilt from its registry entry.
 
     Attributes:
-        model: The reconstructed ``Tier1Model``.
+        model: The reconstructed :class:`~app.models.tier1_anomaly.Tier1Model`.
         model_id: Its registry id, recorded in the meta-learner's provenance.
         best_iteration: The round count early stopping chose on validation. Reused as the fixed
             round count for the out-of-fold folds, which have no honest way to choose their own.
     """
 
-    model: Any
+    model: "Tier1Model"
     model_id: str
     best_iteration: int
 
@@ -481,20 +484,28 @@ class RegisteredTier1:
 def load_registered_tier1(artifact_dir: Path, registry_path: Path) -> RegisteredTier1 | None:
     """Rebuild the registered IEEE-CIS Tier-1 model from its artefact and sidecar.
 
-    There is no ``Tier1Model.load``; Phase 2 only ever needed ``save``. Phase 4 wrote the
-    reconstruction inline as ``train_tier3.load_tier1_scores``, which returns scores alone.
-    This is that function generalised to return the model, so Phase 5 can score three splits
-    with it rather than one, and so the path-safety guard below lives in a single place.
+    The reconstruction itself now lives on :meth:`app.models.tier1_anomaly.Tier1Model.load`,
+    where Phase 7's serving path also reads it. This function remains the *registry-resolving*
+    wrapper: it picks the entry, carries the ``best_iteration`` the meta-learner's folds reuse,
+    and keeps the "return None rather than raise" contract that Phase 5's report depends on.
+
+    The "return None rather than raise" contract covers *absence* only: no registry, no entry,
+    no artefact on disk. A reconstruction that finds the artefact and cannot trust it -- a
+    feature-version hash that does not match the registry, or a sidecar naming an algorithm this
+    path refuses to load -- still raises, deliberately. Absence is a stated gap a report can
+    carry; drift between the saved spec and what ``fit_tier1_input_spec`` produces means every
+    provenance claim downstream is wrong, and degrading quietly would launder that into a
+    missing-model note.
 
     Returns:
         The model, or ``None`` when the registry or artefact is absent -- a stated gap the
         caller carries into the report, never a silent skip.
-    """
-    import lightgbm as lgb
 
-    from app.ml.registry import artifact_path
-    from app.models.tier1_anomaly import ScoreNormaliser, Tier1Model
-    from app.models.tier1_features import Tier1InputSpec
+    Raises:
+        RuntimeError: If the rebuilt spec does not hash to the registered ``feature_version``.
+        ValueError: If the sidecar names an algorithm that cannot be loaded here.
+    """
+    from app.models.tier1_anomaly import Tier1Model
 
     if not registry_path.exists():
         return None
@@ -507,75 +518,30 @@ def load_registered_tier1(artifact_dir: Path, registry_path: Path) -> Registered
         return None
     entry = entries[-1]
     model_id = str(entry["model_id"])
-    # Through the shared guard, not by concatenation. `model_id` here is *file content* -- it
-    # comes out of registry.json, which append_entry does not re-validate -- so it is not a
-    # trusted identifier at the point it becomes a path.
-    sidecar_path = artifact_path(model_id, artifact_dir, ".meta.json")
-    booster_path = artifact_path(model_id, artifact_dir, ".txt")
-    if not sidecar_path.exists() or not booster_path.exists():
+    try:
+        model = Tier1Model.load(
+            model_id,
+            artifact_dir,
+            feature_version=str(entry.get("feature_version", "")) or None,
+        )
+    except FileNotFoundError:
         logger.warning("Tier-1 artefact %s is missing", model_id)
         return None
-
-    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
-    payload = sidecar["spec"]
-    spec = Tier1InputSpec(
-        source_dataset=payload["source_dataset"],
-        numeric_columns=tuple(payload["numeric_columns"]),
-        native_categorical_columns=tuple(payload["native_categorical_columns"]),
-        frequency_columns=tuple(payload["frequency_columns"]),
-        categories={k: tuple(v) for k, v in payload["categories"].items()},
-        encoders={k: dict(v) for k, v in payload["encoders"].items()},
-        post_settlement_columns=tuple(payload["post_settlement_columns"]),
-        # `dropped` is not cosmetic: `Tier1InputSpec.engineering_parameters` hashes
-        # `[str(item) for item in self.dropped]` into the feature version. Rebuilding the spec
-        # with an empty tuple therefore mints a hash that resolves to nothing in the registry --
-        # a traceability chain that looks intact and is not, which is worse than recording
-        # nothing at all. The sidecar stores each entry as "column (reason)", which is exactly
-        # `DroppedColumn.__str__`, so it round-trips.
-        dropped=tuple(_parse_dropped(payload.get("dropped", ()))),
-    )
-    normaliser = sidecar["normaliser"]
-    model = Tier1Model(
-        model_id=model_id,
-        algorithm=sidecar["algorithm"],
-        spec=spec,
-        threshold=float(sidecar["threshold"]),
-        normaliser=ScoreNormaliser(
-            kind=normaliser["kind"], low=normaliser["low"], high=normaliser["high"]
-        ),
-        estimator=lgb.Booster(model_file=str(booster_path)),
-        numeric_only=bool(sidecar["numeric_only"]),
-    )
-    # Prove the rebuilt spec is the registered one rather than assuming it. If the hash does
-    # not match, some part of the spec was not reconstructed faithfully and every provenance
-    # claim downstream of this object is wrong.
-    rebuilt = spec.to_feature_definition().feature_version
-    recorded = str(entry.get("feature_version", ""))
-    if recorded and rebuilt != recorded:
-        raise RuntimeError(
-            f"rebuilt Tier-1 spec hashes to {rebuilt} but the registry records {recorded} for "
-            f"{model_id}. The reconstruction in load_registered_tier1 has drifted from what "
-            "fit_tier1_input_spec produces, so any feature_version recorded from it would be "
-            "unresolvable."
-        )
 
     best_iteration = int(entry.get("hyperparameters", {}).get("best_iteration", OOF_TIER1_ROUNDS))
     return RegisteredTier1(model=model, model_id=model_id, best_iteration=best_iteration)
 
 
 def _parse_dropped(entries: Any) -> list[Any]:
-    """Rebuild ``DroppedColumn`` records from their ``"column (reason)"`` serialisation."""
-    from app.models.tier1_features import DroppedColumn
+    """Rebuild ``DroppedColumn`` records from their ``"column (reason)"`` serialisation.
 
-    rebuilt: list[Any] = []
-    for entry in entries:
-        text = str(entry)
-        if text.endswith(")") and " (" in text:
-            column, reason = text.split(" (", 1)
-            rebuilt.append(DroppedColumn(column=column, reason=reason[:-1]))
-        else:
-            rebuilt.append(DroppedColumn(column=text, reason=""))
-    return rebuilt
+    Delegates to :func:`app.models.tier1_features.parse_dropped`, which is where the parser
+    now lives -- beside the formatter it must stay in step with, since the string form is
+    hashed into the feature version.
+    """
+    from app.models.tier1_features import parse_dropped
+
+    return list(parse_dropped(entries))
 
 
 @dataclass(frozen=True)

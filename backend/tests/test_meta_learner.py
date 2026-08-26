@@ -784,6 +784,7 @@ def test_top_features_fit_the_audit_record() -> None:
     result = model.predict(_transaction(), _tier1(), None, None)
     record = AuditRecord(
         transaction_id="t1",
+        account_id="acct-1",
         decided_at=datetime(2018, 5, 5, tzinfo=UTC),
         decision=result.decision,
         risk_probability=result.probability,

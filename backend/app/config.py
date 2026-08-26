@@ -28,6 +28,13 @@ DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 #: resolves to repo-root/notebooks on a host checkout and /notebooks in the container.
 DEFAULT_REPORTS_DIR = Path(__file__).resolve().parents[2] / "notebooks"
 
+#: Where trained weights live. Phase 2-6 reached these through
+#: ``app.ml.registry.DEFAULT_ARTIFACT_DIR``, which is derived from ``__file__`` and is correct
+#: on a host checkout but wrong in the container layout, where ``/srv`` is the backend
+#: directory and there is no repo root above it. Serving must not depend on that arithmetic,
+#: so the directory becomes configuration here and docker-compose sets it explicitly.
+DEFAULT_MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
+
 
 class Settings(BaseSettings):
     """Runtime configuration for the RiskIQ backend."""
@@ -46,8 +53,21 @@ class Settings(BaseSettings):
     api_version: str = "0.1.0"
 
     database_url: str = Field(
-        default="postgresql+asyncpg://riskiq:riskiq@localhost:5432/riskiq",
-        description="Async SQLAlchemy DSN for PostgreSQL.",
+        default="postgresql+asyncpg://riskiq_app@localhost:5432/riskiq",
+        description="Async SQLAlchemy DSN for PostgreSQL. Defaults to the least-privilege "
+        "riskiq_app role with no password, so a deployment that forgets to set this fails to "
+        "connect rather than quietly connecting as the table-owning superuser — which bypasses "
+        "row-level security unconditionally and would disable every isolation policy while "
+        "leaving them looking correct in the schema.",
+    )
+    migration_database_url: str | None = Field(
+        default=None,
+        description="DSN Alembic connects with. Separate from database_url on purpose: the "
+        "application runs as riskiq_app, which by design cannot CREATE TABLE, GRANT or ALTER "
+        "ROLE — so migrations need an admin DSN. Keeping them in one variable would mean the "
+        "obvious fix for a failing migration is to point the *application* at a superuser, "
+        "which silently disables every row-level-security policy. Falls back to database_url "
+        "when unset, so a local superuser setup still works.",
     )
     database_echo: bool = Field(
         default=False,
@@ -78,6 +98,54 @@ class Settings(BaseSettings):
         default=DEFAULT_REPORTS_DIR,
         description="Where the pipeline writes the data-quality report.",
     )
+    models_dir: Path = Field(
+        default=DEFAULT_MODELS_DIR,
+        description="Root of the model tree: registry.json plus the artifacts/ directory.",
+    )
+
+    # --- Serving ---------------------------------------------------------------------
+    scoring_source_dataset: Literal["ieee_cis", "paysim"] = Field(
+        default="ieee_cis",
+        description="Which corpus's models the scoring endpoint serves. Only ieee_cis has a "
+        "full four-layer stack; PaySim's Tier-1 is a simulator artefact and its Tier-3 "
+        "abstains on every test transaction, so it is not a servable default.",
+    )
+    tier3_timeout_ms: int = Field(
+        default=50,
+        ge=1,
+        le=5_000,
+        description="Budget for the Tier-3 ring lookup. On expiry the decision is made "
+        "without Tier-3 and the audit row records degraded mode and why — the Phase 7 "
+        "graceful-degradation requirement, and security-checklist item 5.3.",
+    )
+    account_history_limit: int = Field(
+        default=500,
+        ge=1,
+        le=10_000,
+        description="Most recent prior transactions read per account when assembling "
+        "serving features. Bounds the indexed range scan so one very active account cannot "
+        "make a scoring call unboundedly slow. The widest engineered window is 7 days.",
+    )
+
+    # --- Rate limiting ---------------------------------------------------------------
+    rate_limit_requests: int = Field(
+        default=60,
+        ge=1,
+        description="Requests permitted per principal per window on public endpoints.",
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=3_600,
+        description="Length of the fixed rate-limit window.",
+    )
+
+    cors_allow_origins: tuple[str, ...] = Field(
+        default=("http://localhost:5173",),
+        description="Exact origins the dashboard is served from. Never '*': these endpoints "
+        "are credentialed, and a wildcard with credentials is both refused by browsers and "
+        "wrong to ask for.",
+    )
 
     @property
     def raw_data_dir(self) -> Path:
@@ -88,6 +156,36 @@ class Settings(BaseSettings):
     def processed_data_dir(self) -> Path:
         """Directory holding pipeline output — the parquet materialisations."""
         return self.data_dir / "processed"
+
+    @property
+    def alembic_url(self) -> str:
+        """Return the DSN migrations should run against."""
+        return self.migration_database_url or self.database_url
+
+    @property
+    def artifact_dir(self) -> Path:
+        """Directory holding trained weights. Gitignored; the registry is the tracked part."""
+        return self.models_dir / "artifacts"
+
+    @property
+    def registry_path(self) -> Path:
+        """The append-only ``registry.json`` that resolves a model_version to its provenance."""
+        return self.models_dir / "registry.json"
+
+    @model_validator(mode="after")
+    def reject_wildcard_cors_origin(self) -> "Settings":
+        """Refuse a wildcard origin.
+
+        Every route on this service except ``/health`` is credentialed, and a wildcard origin
+        cannot be combined with credentials — browsers reject the pair outright. Catching it
+        here turns a confusing runtime CORS failure into a startup error that names the cause.
+        """
+        if "*" in self.cors_allow_origins:
+            raise ValueError(
+                "cors_allow_origins must list exact origins; '*' cannot be used on a "
+                "credentialed API. Set the dashboard's origin explicitly."
+            )
+        return self
 
     @model_validator(mode="after")
     def reject_placeholder_secret_outside_local(self) -> "Settings":
