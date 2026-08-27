@@ -3,10 +3,64 @@
 **Real-time fraud, chargeback and abuse-ring detection.**
 Razorpay AI Buildathon 2026 — Track 2: AI Risk Manager.
 
-> **Placeholder.** This file is written properly in Phase 11: objective, architecture
-> diagram, setup instructions, the metrics summary table with each tier's honest
-> limitations, and the Assumptions section for the causal cost model. What is below is
-> only enough to get the stack running.
+RiskIQ scores a payment transaction in real time, ranks it by *cost* rather than raw
+fraud probability, and surfaces the account rings behind coordinated abuse — with every
+decision written to an append-only audit trail an analyst can open and see the reasoning
+for. It is built as four independent layers rather than one classifier, on the belief
+that a fraud system a panel (or a merchant) cannot audit is not one they should trust:
+a per-transaction anomaly score, a causal cost layer that turns that score into a
+block/allow decision, and a transaction-network graph that finds abuse rings a
+per-transaction model structurally cannot see. Two more layers — a behavioral sequence
+model and a meta-learner fusing everything — were built, measured, and **retired**
+because the held-out numbers said they added nothing; that result is reported here
+rather than hidden, because a fraud product's honesty about what does *not* work is
+part of what makes the part that does work believable.
+
+## Headline numbers
+
+Every figure below is measured on a time-ordered held-out test split — never on live
+demo traffic — and ships with its 95% CI and its false-positive cost. Full detail,
+confusion matrices, and the obstacles behind each number are in `BUILD_LOG.md`.
+
+| Layer | Result | Status |
+|---|---|---|
+| **Tier-1** (LightGBM, per-transaction) | PR-AUC **0.5276**, 95% CI [0.5117, 0.5462], vs 0.0348 no-skill floor — **15.2x lift** | Shipped, carries the scoring path |
+| **Tier-3** (Louvain, abuse-ring graph) | Ring-level PR-AUC **0.6465**, 95% CI [0.5700, 0.7171], vs 0.1077 base rate — **6.0x lift** on 1,328 test rings | Shipped as an investigative lead (`GET /rings`) — **provisional**: a confirmed determinism gap means three same-seed reruns produced different ring counts and a validation-PR-AUC swing; treat 0.6465 as pending a fix, not final |
+| **Meta-learner** (XGBoost fusion, Tier-1 + Tier-2 + Tier-3) | PR-AUC **0.4954** vs Tier-1 alone's 0.5276 — paired delta **-0.0322**, CI excludes zero **on the negative side** | Tested, **retired** — measurably worse on the ranking metric than Tier-1 alone; its cost-side advantage (~1.7% cheaper) was a bare point estimate with no CI, not enough to ship on |
+| **Cost-aware ranking** (Phase 6, shipped policy) | **-22.41%** cost per 1,000 decisions vs probability-only ranking at a matched 1% flag rate, CI [-1345.28, -881.81] (card-present cost model, $3 review / $15 chargeback) | Shipped — **regime-dependent**: under a card-not-present cost model ($50 / $500) the same policy's advantage falls to **-2.22%**, CI [-582.18, -145.50] — still real, an order of magnitude smaller. A second policy that *trains* on cost rather than just *thresholding* by it (`learned_loss`) reached -19.79% and tied with the shipped policy (CI crosses zero) — cost-sensitive training bought nothing over cost-sensitive thresholding here |
+
+The one sentence that explains the cost result: **cost-aware ranking pays in proportion
+to how heterogeneous the loss is.** At a flat $500 chargeback fee, every miss costs
+about the same and there is little for a cost model to exploit; at $15, transaction
+amount varies the loss enough for cost-aware ranking to matter.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    T1["Tier-1<br/>anomaly score<br/>(LightGBM)"]
+    T2["Tier-2<br/>behavioral sequence<br/>(LSTM autoencoder)<br/><i>retired, not served</i>"]
+    ML["Meta-learner<br/>(XGBoost fusion)<br/><i>tested, retired</i>"]
+    CC["Causal cost layer<br/>(plug-in / learned-loss)"]
+    API["Scoring API<br/>(FastAPI, auth + RLS + audit)"]
+    WH["Razorpay webhook<br/>(HMAC-authenticated)"]
+    T3["Tier-3<br/>abuse-ring graph<br/>(Louvain + centrality)"]
+    DASH["Dashboard<br/>(React)"]
+
+    T1 --> CC
+    T1 -.-> ML
+    T2 -.-> ML
+    T3 -.-> ML
+    ML -.->|"retired — worse than Tier-1 alone"| CC
+    CC --> API
+    API --> WH
+    API --> DASH
+    T3 -->|"GET /rings — investigative lead, not a decision"| DASH
+```
+
+Solid arrows are the live decision path; dashed arrows are layers that were built,
+measured, and did not make the cut. Tier-3 stands apart from the scoring path entirely
+— it never moves a score, and its ring topology is surfaced to analysts directly.
 
 ## Quick start
 
@@ -120,6 +174,25 @@ pre-commit run --all-files
 | `PHASE_PROMPTS.md` | The full phase-by-phase build plan |
 | `BUILD_LOG.md` | What shipped, what is deferred, known gaps |
 | `.claude/skills/` | The security and ML-evaluation bars this project is held to |
+
+## Future work
+
+Not built — named honestly as known follow-ups, not hidden gaps, from the Phase 9.5
+audit's feature-opportunity catalog. Full detail in `BUILD_LOG.md`'s Phase 9 and 9.5
+entries.
+
+- **`scored_transactions` ledger** and **`(account_id, transaction_id)` idempotency** on
+  `POST /score` and the webhook — both named a Phase 7 prerequisite, still open
+- **Real identity binding** for the webhook's `notes["riskiq_account_id"]` claim — the
+  current known-account gate narrows but does not close the exposure
+- **Request-id logging** across the API
+- **A CI secret scan over the full git history** (`git log -p` / trufflehog) — never
+  independently re-verified by an agent with shell access
+- **Tier-3 determinism fix** — extend the cross-process reproducibility guard (currently
+  PaySim-only) to the IEEE-CIS path, to make the 0.6465 headline final rather than
+  provisional
+- **PaySim surrogate-ring-recovery threshold fix** — currently selected on the test
+  split rather than validation
 
 ## Scope
 

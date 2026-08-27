@@ -99,6 +99,12 @@ export function MetricsPanel() {
             {tier3.pr_auc_ci95[1].toFixed(4)}]) — {tier3.pr_auc_no_skill_floor.toFixed(4)}{' '}
             no-skill floor
           </p>
+          <p className="font-sans text-xs text-text-faint">
+            <strong>Provisional.</strong> A confirmed reproducibility gap means the
+            cross-process determinism check only covers PaySim, not this corpus — three
+            same-seed IEEE-CIS reruns produced different ring counts and a validation-PR-AUC
+            swing. Treat this figure as pending a fix, not final.
+          </p>
           <FalsePositiveCostNote cost={tier3.false_positive_cost} unit="rings" />
         </div>
       )}

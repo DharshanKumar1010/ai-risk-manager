@@ -18,8 +18,9 @@ solved read as more credible to a panel than a smoothed-over success narrative.
 | 8 — React dashboard | **Complete, verified** | React dashboard (live scorer, cost comparison chart, Tier-3 network graph, metrics panel, decision audit table). Two-token demo mode (`POST /auth/demo-token`, local/ci only). Migration `0003_analyst_session_role.py` also shipped this phase — the real RLS fix Phase 7 named as its own prerequisite (`GRANT riskiq_analyst TO riskiq_app WITH INHERIT FALSE` plus `SET LOCAL ROLE` in `get_analyst_session`), closing that FAIL. Two security findings caught and fixed (dashboard leaking the cost-optimal threshold; Tier-3 "anonymized" ring IDs trivially reversible) — both required a model retrain, which is what moved the Tier-3 headline (see row 4). 698 backend tests passing, frontend typecheck/lint clean. Detail below. | Shipped without a recorded `ml-evaluator` gate despite retraining a model and shipping a metrics dashboard — CLAUDE.md requires one for phases touching training/metrics. Phase 9.5's audit effectively ran that gate retroactively and found the Tier-3 headline drift above; see that entry. |
 | 9 — Razorpay webhook integration | **Complete, verified** | `POST /webhooks/razorpay/transaction` — HMAC-signed (not JWT), scores via the existing pipeline, writes an audit row, returns a `merchant_context` risk block. One BLOCKING security finding (unverified `notes["riskiq_account_id"]` claim) closed with an interim known-account gate; two ml-evaluator findings closed with a `fraud_rate_basis` field and a "what this does not measure" section. 741 passed, 1 skipped. Detail below. | `scored_transactions` ledger and `(account_id, transaction_id)` idempotency remain deferred prerequisites (named by Phase 7, still open). No real merchant/customer identity binding for the webhook's account claim — the known-account gate narrows but does not close that exposure. Full gap list in the Phase 9 entry. |
 | 9.5 — Comprehensive audit & fixes | **Complete** | Six-agent read-only audit (bug hunt, dead code, security, full testing, cross-phase consistency, ml-evaluation) across all 9 phases, followed by a fix pass. Closed 2 new security findings (fail-open `environment` default; a silently-vacuous route-authorization test) and reconciled the Phase 4/8 Tier-3 documentation drift this audit found. Detail below. | Tier-3 determinism and the surrogate-recovery test-split-selection bug (both Phase 4, both re-confirmed still open by this audit) were deliberately left unfixed — see that entry for why. |
+| 9.6 — Presentation pass | **Complete** | `README.md` rewritten (headline numbers, Mermaid architecture diagram, Future Work section) in place of its Phase-11 placeholder banner; new `EXECUTIVE_SUMMARY.md`; dashboard copy pass (Tier-3 provisional note, explicit live-demo-not-evaluation captions on the scorer and live feed). No new models, endpoints, or metrics. Detail below. | Wording only — every known gap from 9.5 is carried forward unchanged, not resolved here. |
 | 10 — Testing, CI, deployment | Not started | | With SEC-1 (fail-open `environment` default) fixed in Phase 9.5, this phase no longer inherits that risk into a real deployment. |
-| 11 — Docs, diagram, pitch, submission | Not started | | |
+| 11 — Docs, diagram, pitch, submission | Not started | | README, architecture diagram and an executive summary were front-loaded into Phase 9.6 under deadline pressure — this phase is now narrower: pitch video and final submission-form assembly only. |
 
 ---
 
@@ -2311,3 +2312,64 @@ regressions found.
 
 **Next:** Phase 9.6 (presentation pass — README, executive summary, dashboard copy; no new
 models, endpoints, or metrics), then Phase 10 (testing, CI, deployment).
+
+## Phase 9.6 — Presentation Pass
+
+**What this phase was.** Wording and structure only, against the numbers and findings
+Phase 9.5 already made accurate — no new models, endpoints, or metrics. `README.md` still
+opened with a "written properly in Phase 11" placeholder banner despite its route table and
+auth description already having been corrected in 9.5; this phase replaced that banner with
+the actual project pitch, a headline-numbers table, and a Mermaid architecture diagram, added
+a one-page `EXECUTIVE_SUMMARY.md`, and made three dashboard panels state explicitly, to a
+viewer rather than only in code comments, distinctions the codebase already enforced
+internally.
+
+**What changed:**
+- `README.md`: the Phase-11 placeholder banner removed and replaced with a plain-language
+  opening paragraph, a headline-numbers table (Tier-1 0.5276/15.2x, Tier-3 0.6465/6.0x marked
+  **provisional** in-line — not only in this log, meta-learner's retirement and its
+  paired-delta CI, the shipped cost policy's 22.41% *and* its CNP-regime 2.22% and its tied
+  `learned_loss` alternative at 19.79%, so the flattering number is never quoted alone), a
+  Mermaid diagram distinguishing the live decision path from the two retired layers, and a
+  Future Work section naming the seven concretely-specified items from the Phase 9.5 feature
+  catalog (the other roughly five of "12 cataloged" were never individually itemized in
+  writing anywhere in this repository, so this section names only what can be traced to a
+  real citation rather than inventing the rest). The already-correct Quick start, API table,
+  Checks, and Layout sections from 9.5 were left untouched and re-verified for drift after the
+  new sections were spliced in around them.
+- New `EXECUTIVE_SUMMARY.md`: one page, what was tried/what worked/what didn't, framing the
+  meta-learner tie, Tier-3's provisional status, and PaySim's quarantined >0.95 Tier-1 result
+  explicitly as evidence the project's own evaluation standard was applied uniformly rather
+  than only where it flattered. Names the Phase 9.5 audit's session-level result directly (2
+  new security findings, one piece of cross-phase documentation drift, one silently-vacuous
+  test — all confirmed by direct reproduction, all fixed) as the concrete evidence for that
+  claim, rather than asserting rigor without a specific example.
+- `frontend/src/components/metrics/MetricsPanel.tsx`: the Tier-3 section — which already
+  carried its false-positive-cost note with the correct `rings` unit from 9.5 — gained one
+  explicit sentence flagging the ring-level PR-AUC and its CI as provisional, next to the
+  number itself rather than only in `BUILD_LOG.md`.
+- `frontend/src/components/console/LiveFeedPanel.tsx` and
+  `frontend/src/components/scoring/ScoringWidget.tsx`: the only prior signal that live-scorer
+  output is not a held-out evaluation result was a code comment citing "its own 'LIVE' label"
+  — the actual rendered UI carried only a connection-status word (`live` / `connecting…` /
+  `reconnecting…`), which does not by itself tell a first-time viewer these are unevaluated
+  demo scores rather than a verified live result. Both components now carry an explicit
+  sentence saying so, next to the live feed heading and next to each scored-transaction
+  result respectively.
+
+**What was deliberately not touched:** `RingsPanel.tsx` and `CostComparisonChart.tsx` already
+carried adequate plain-English framing sentences from 9.5 (the ring panel's "investigative
+lead, not a decision" line; the cost chart's per-regime detail text) — re-read after the
+Tier-3 provisional note was added elsewhere on the same page to confirm nothing now reads
+inconsistently, and nothing did, so neither was edited. No known gap recorded in Phase 9.5 was
+resolved here; the Future Work section and this entry both carry them forward unchanged.
+
+**Verification:** `frontend`: `npm run lint` clean (same 4 pre-existing, unrelated warnings
+noted in Phase 9.5), `npm test` **30 passed** (unchanged — the new copy is additive text
+matched by existing tests' text/role queries, not new logic, so no new test cases were
+needed). Backend untouched this phase; last-run figures remain Phase 9.5's 759 passed, 1
+skipped. Every headline number was grepped across `README.md`, `EXECUTIVE_SUMMARY.md`,
+`BUILD_LOG.md`, and the edited dashboard components to confirm agreement before closing this
+phase.
+
+**Next:** Phase 10 (testing, CI, deployment).

@@ -55,6 +55,10 @@ export function LiveFeedPanel({ onDecision }: { onDecision?: (event: FeedEvent) 
           <span role="status">{STATUS_LABEL[status]}</span>
         </span>
       </div>
+      <p className="font-sans text-xs text-text-faint">
+        Live demo scores from this page's own traffic, not a held-out evaluation result —
+        see "Held-out evaluation" below for the measured figures.
+      </p>
 
       {events.length === 0 ? (
         <div className="rounded-console border border-border bg-surface p-6 text-center font-sans text-sm text-text-faint">

@@ -136,17 +136,22 @@ export function ScoringWidget() {
       )}
 
       {result && (
-        <div className="flex flex-wrap items-center gap-3 rounded-console border border-border bg-surface p-3">
-          <DecisionBadge decision={result.decision} />
-          {result.degraded && <DegradedBadge />}
-          <span className="font-mono text-xs text-text-faint">{result.transaction_id}</span>
-          <Button
-            variant="ghost"
-            onClick={() => void handleExplain()}
-            disabled={explainStatus === 'loading' || analystToken === null}
-          >
-            Why? (analyst view)
-          </Button>
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-3 rounded-console border border-border bg-surface p-3">
+            <DecisionBadge decision={result.decision} />
+            {result.degraded && <DegradedBadge />}
+            <span className="font-mono text-xs text-text-faint">{result.transaction_id}</span>
+            <Button
+              variant="ghost"
+              onClick={() => void handleExplain()}
+              disabled={explainStatus === 'loading' || analystToken === null}
+            >
+              Why? (analyst view)
+            </Button>
+          </div>
+          <p className="font-sans text-xs text-text-faint">
+            A live demo decision on this transaction, not a held-out evaluation result.
+          </p>
         </div>
       )}
 
