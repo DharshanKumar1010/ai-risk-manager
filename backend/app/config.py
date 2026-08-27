@@ -58,7 +58,16 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
-    environment: Literal["local", "ci", "staging", "production"] = "local"
+    environment: Literal["local", "ci", "staging", "production"] = Field(
+        description="No default, deliberately -- see Phase 9.5's audit finding. A default of "
+        "'local' meant an ENVIRONMENT variable left unset in a real deployment would silently "
+        "boot with every dev-mode behavior active: the three placeholder-refusal guards below "
+        "never run (they only check when 'staging'/'production' is what got set), and "
+        "app.main.create_app mounts the unauthenticated POST /auth/demo-token token minter. "
+        "Requiring this field turns a missing environment variable into a startup failure "
+        "everywhere, local dev included -- both docker-compose.yml and .env.example already "
+        "set it explicitly, so this changes nothing for either.",
+    )
     debug: bool = False
 
     api_title: str = "RiskIQ"
@@ -100,10 +109,13 @@ class Settings(BaseSettings):
     )
 
     jwt_secret_key: str = Field(
-        default=PLACEHOLDER_JWT_SECRET,
         min_length=MIN_JWT_SECRET_BYTES,
-        description="HMAC signing key for access tokens. Must be overridden outside local, "
-        "and at least 32 bytes per RFC 7518 section 3.2.",
+        description="HMAC signing key for access tokens, at least 32 bytes per RFC 7518 "
+        "section 3.2. No default -- Phase 9.5's audit finding: a default here meant this "
+        "service could boot signing tokens with a well-known key published in tracked source "
+        "whenever ENVIRONMENT was left unset. Always required now, local dev included; "
+        "PLACEHOLDER_JWT_SECRET below is kept only as the value "
+        "reject_placeholder_secret_outside_local refuses, for a caller that explicitly sets it.",
     )
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "riskiq"
@@ -111,7 +123,6 @@ class Settings(BaseSettings):
     jwt_expiry_seconds: int = Field(default=3600, ge=60, le=86_400)
 
     entity_anonymization_key: str = Field(
-        default=PLACEHOLDER_ENTITY_ANONYMIZATION_KEY,
         min_length=MIN_ENTITY_ANONYMIZATION_KEY_BYTES,
         description="HMAC key behind app.models.tier3_graph.export_ring_edges's entity node "
         "ids. Unsalted SHA-256 over IEEE-CIS's shared-entity fingerprints (card1/card2/card5/"
@@ -120,17 +131,16 @@ class Settings(BaseSettings):
         "resistance does nothing against a preimage search over a few hundred thousand "
         "candidates. This key is what makes the mapping non-reversible without it. Used only "
         "at training/export time (app.models.train_tier3.build_served_model) -- never written "
-        "into a Tier3Model artifact, models/registry.json, or any API response.",
+        "into a Tier3Model artifact, models/registry.json, or any API response. No default, "
+        "same Phase 9.5 reasoning as jwt_secret_key above.",
     )
 
     razorpay_webhook_secret: str = Field(
-        default=PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET,
         min_length=MIN_RAZORPAY_WEBHOOK_SECRET_BYTES,
         description="HMAC-SHA256 key configured in the Razorpay dashboard's webhook settings, "
         "verified against X-Razorpay-Signature by app.core.webhook_security. The *only* "
         "authentication POST /webhooks/razorpay/transaction has -- there is no bearer token on "
-        "that route at all. Same placeholder-refusal and length floor as jwt_secret_key, for "
-        "the same RFC 7518 section 3.2 reasoning.",
+        "that route at all. No default, same Phase 9.5 reasoning as jwt_secret_key above.",
     )
 
     jwt_ws_audience: str = Field(

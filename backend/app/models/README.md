@@ -222,7 +222,9 @@ and the registry's reproducibility claim would be false. Every trained model app
 threshold chosen on one validation window stops being cost-minimising; the intended shape is
 that confirmed outcomes shift the operating threshold without refitting. Deliberately not
 built in Phase 2 — recalibrating against live outcomes needs a labelled feedback path that
-does not exist until Phase 9, and building it now would mean building it against imagined data.
+does not exist in this project (Phase 9's webhook records only this service's own decision,
+never a confirmed outcome, so it did not supply this despite an earlier version of this note
+promising it would), and building it now would mean building it against imagined data.
 
 ---
 

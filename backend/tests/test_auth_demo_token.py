@@ -1,6 +1,7 @@
 """``POST /auth/demo-token`` — mounting, persona-to-scope mapping, and expiry honesty."""
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -161,3 +162,18 @@ class TestMintedTokenWorksAgainstRealRoutes:
             "/audit/entry/1/explain", headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 403
+
+
+class TestRateLimiting:
+    """Phase 9.5: this was previously the only route on the service with no rate limit at
+    all -- a caller with no bearer token could mint tokens at line rate."""
+
+    def test_the_limiter_is_consulted(self, app: FastAPI, client: TestClient) -> None:
+        client.post("/auth/demo-token", json={"persona": "analyst"})
+        limiter = app.state.rate_limiter
+        assert any(identity.startswith("ip:") for identity in limiter.calls)
+
+    def test_no_limiter_installed_fails_closed(self, app: FastAPI, client: TestClient) -> None:
+        app.state.rate_limiter = None
+        response = client.post("/auth/demo-token", json={"persona": "analyst"})
+        assert response.status_code == 503

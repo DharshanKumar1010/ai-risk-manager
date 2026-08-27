@@ -215,16 +215,6 @@ class GraphSnapshot:
             if self.graph.nodes[node].get("kind", "account") == "account"
         ]
 
-    @property
-    def node_count(self) -> int:
-        """Return the total node count, accounts and entities together."""
-        return int(self.graph.number_of_nodes())
-
-    @property
-    def edge_count(self) -> int:
-        """Return the edge count."""
-        return int(self.graph.number_of_edges())
-
 
 class EntityGraph(ABC):
     """A time-bounded account graph. Subclasses supply edges; the ring algorithm is shared.

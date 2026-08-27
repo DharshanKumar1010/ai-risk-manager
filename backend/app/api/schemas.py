@@ -495,8 +495,11 @@ class RazorpayPaymentEntity(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str = Field(min_length=1, max_length=128)
-    amount: int = Field(ge=0, le=int(MAX_TRANSACTION_AMOUNT) * 100, description="Smallest "
-        "currency unit (paise for INR).")
+    amount: int = Field(
+        ge=0,
+        le=int(MAX_TRANSACTION_AMOUNT) * 100,
+        description="Smallest " "currency unit (paise for INR).",
+    )
     currency: str = Field(max_length=8)
     method: str | None = Field(default=None, max_length=MAX_RAW_VALUE_LENGTH)
     card: dict[str, str] | None = Field(
@@ -526,6 +529,7 @@ class RazorpayPaymentEntity(BaseModel):
             if len(key) > MAX_RAW_VALUE_LENGTH or len(entry) > MAX_RAW_VALUE_LENGTH:
                 raise ValueError("card/notes entries must be shorter than 256 characters")
         return value
+
     created_at: int = Field(
         ge=0,
         le=4_102_444_800,  # 2100-01-01T00:00:00Z

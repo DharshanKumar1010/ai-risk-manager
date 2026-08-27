@@ -26,17 +26,25 @@ docker compose up
 
 ## API
 
-Every route except `/health` requires a bearer token, and permissions come from the token's
-`scopes` claim — never from anything in the request. Full schemas at `/docs`.
+Every route requires server-side authentication and permissions come from that authentication,
+never from anything in the request — but not every route uses the same mechanism. Most take a
+bearer token, scoped by the `scopes` claim; `/health` needs none by design; the webhook is
+authenticated by an HMAC signature instead, because it has no caller to issue it a token to.
+Full schemas at `/docs`.
 
-| Method | Path | Scope required | Returns |
-|--------|------|----------------|---------|
-| `GET`  | `/health` | — | Liveness. Checks no dependency by design. |
-| `POST` | `/score` | `score:write` | The decision, and an audit handle. |
-| `GET`  | `/transactions` | `transactions:read` | The caller's scored transactions. |
-| `GET`  | `/audit/{transaction_id}` | `audit:read` | Every recorded decision for one transaction. |
-| `GET`  | `/audit/entry/{audit_id}/explain` | `explain:read` + `analyst` | Feature attribution. Analysts only. |
-| `GET`  | `/rings` | `rings:read` + `analyst` | Flagged abuse rings and their membership. |
+| Method | Path | Auth | Returns |
+|--------|------|------|---------|
+| `GET`  | `/health` | none | Liveness. Checks no dependency by design. |
+| `POST` | `/score` | bearer, `score:write` | The decision, and an audit handle. |
+| `GET`  | `/transactions` | bearer, `transactions:read` | The caller's scored transactions. |
+| `GET`  | `/audit` | bearer, `audit:read` | Recent recorded decisions visible to the caller. |
+| `GET`  | `/audit/{transaction_id}` | bearer, `audit:read` | Every recorded decision for one transaction. |
+| `GET`  | `/audit/entry/{audit_id}/explain` | bearer, `explain:read` + `analyst` | Feature attribution. Analysts only. |
+| `GET`  | `/rings` | bearer, `rings:read` + `analyst` | Flagged abuse rings and their membership. |
+| `POST` | `/auth/ws-ticket` | bearer, `analyst` + `audit:read` + `explain:read` | A short-lived ticket for the live feed socket. |
+| `GET`  | `/ws/feed` | ws-ticket (query param) | The live scoring decision feed, analyst-only. |
+| `POST` | `/webhooks/razorpay/transaction` | HMAC (`X-Razorpay-Signature`), not a bearer token | Score a Razorpay payment event; returns risk context — see `BUILD_LOG.md`'s Phase 9 entry for why this one route's response is allowed to carry more than the others. |
+| `POST` | `/auth/demo-token` | none — mints a token rather than requiring one | Local/CI only; not mounted in staging or production. |
 
 `POST /score` takes **raw transaction fields**, never an engineered feature vector. The server
 assembles the vector from the payload, the account's own history, and the fitted encoders — an

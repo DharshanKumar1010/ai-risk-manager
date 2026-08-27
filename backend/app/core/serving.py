@@ -20,8 +20,11 @@ prevent.
 **The decision.** Tier-1's calibrated probability and the transaction's amount go to the
 Phase 6 ``plug_in`` cost policy, which is what Phase 6 actually measured and shipped:
 22.41% cheaper than probability ranking at a matched 1% flag rate. The meta-learner is
-deliberately **not** in the decision path — registry entry 25 records it losing to Tier-1 alone
-by 0.0322 PR-AUC with a confidence interval excluding zero, and ``app/models/README.md`` says
+deliberately **not** in the decision path — registry entry ``meta-learner-xgboost-ieee-cis-
+20260824t145659z`` records it losing to Tier-1 alone by 0.0322 PR-AUC with a confidence interval
+excluding zero (named by ``model_id``, not by position -- Phase 9.5 found the previous
+positional reference, "registry entry 25", had already drifted off by one against the
+append-only file it named), and ``app/models/README.md`` says
 in as many words that it is not recommended for serving. Serving it anyway to satisfy a
 four-layer description would be choosing the architecture diagram over the measurement.
 

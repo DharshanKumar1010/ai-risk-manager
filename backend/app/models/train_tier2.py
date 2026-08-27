@@ -2286,6 +2286,16 @@ def render_report(report: CorpusReport, sample: int | None, epochs: int) -> str:
         "Measures the scoring call only — window in, decision out. Assembling the window from "
         "the account's history is Phase 7's scoring endpoint and is budgeted separately.",
         "",
+        "> **Wall-clock latency on one machine varies run to run and should not be read as a "
+        "serving guarantee from this number alone.** Two runs of the identical model "
+        "(`...w15-latent8-ieee-cis-20260823t070529z` and `...20260823t083445z` in "
+        "`models/registry.json`, same PR-AUC, same `feature_version`) measured p99 at 5.76ms "
+        "and 45.18ms respectively against this same 50ms budget — the slower run was taken "
+        "while Phase 4's graph builds were saturating the CPU, not a regression in this layer. "
+        "If this report's own p99 above sits close to budget, check `models/registry.json` for "
+        "whether a contemporaneous benchmark exists before treating it as a serving figure; "
+        "Phase 10 re-benchmarks on an idle machine before this is quoted as one.",
+        "",
         "## What this does NOT catch",
         "",
         "Written from the false negatives actually observed on the held-out test split at "

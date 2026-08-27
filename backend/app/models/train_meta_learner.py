@@ -177,8 +177,6 @@ def load_splits(
     return frames
 
 
-
-
 # ==========================================================================================
 # The ablation
 # ==========================================================================================
@@ -1168,9 +1166,10 @@ def register(
             "carry a per-account feature vector."
         ),
         (
-            "Not fitted on PaySim. Its Tier-1 PR-AUC of 0.9999 is a simulator artefact "
-            "(amount == oldbalanceOrg on 97.49% of fraud), it has no Tier-2 model, and Tier-3 "
-            "abstains on 100% of its test transactions. See BUILD_LOG.md Phase 2 finding 3."
+            "Not fitted on PaySim. Its Tier-1 PR-AUC of 0.9998 (the registered matched-inputs "
+            "model) is a simulator artefact (amount == oldbalanceOrg on 97.49% of fraud), it "
+            "has no Tier-2 model, and Tier-3 abstains on 100% of its test transactions. See "
+            "BUILD_LOG.md Phase 2 finding 3."
         ),
         (
             "top_features is an evasion oracle: authenticated internal reviewers only, never "

@@ -516,8 +516,12 @@ class OnlineRecalibrator(Protocol):
     shift the operating threshold without refitting the model.
 
     Deliberately not built in Phase 2. Recalibrating against live outcomes needs a labelled
-    feedback path that does not exist until Phase 9, and building it now would mean building
-    it against imagined data. Recorded in ``BUILD_LOG.md`` as designed-for.
+    feedback path that does not exist in this project -- Phase 9's webhook scores live
+    transactions but records only this service's own allow/review/block decision in
+    ``audit_log``, never a confirmed outcome, so the labelled path this class needs still does
+    not exist (Phase 9.5 corrected this docstring, which had promised Phase 9 would supply it).
+    Building this now would mean building it against imagined data. Recorded in
+    ``BUILD_LOG.md`` as designed-for.
     """
 
     def observe(self, model_version: str, score: float, was_fraud: bool) -> None:

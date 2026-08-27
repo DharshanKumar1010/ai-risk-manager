@@ -19,7 +19,7 @@ from typing import Any
 
 import jwt
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx2 import Response
 
@@ -42,12 +42,20 @@ from tests.conftest import (
 )
 
 #: (method, path, body, required scopes) for every route that must refuse an anonymous caller.
+#:
+#: Phase 9.5: `/audit` and `/auth/ws-ticket` were added here after fixing
+#: `test_every_route_is_covered_by_this_sweep`'s route-discovery mechanism (it had been silently
+#: checking nothing -- see that test's own docstring) surfaced that both were live, protected
+#: routes with no coverage under this sweep. Both were already correctly authenticated in
+#: production code; only the test coverage was missing.
 PROTECTED_ROUTES: tuple[tuple[str, str, dict[str, Any] | None, tuple[str, ...]], ...] = (
     ("POST", "/score", score_payload(), (SCOPE_SCORE,)),
     ("GET", "/transactions", None, (SCOPE_TRANSACTIONS_READ,)),
+    ("GET", "/audit", None, (SCOPE_AUDIT_READ,)),
     ("GET", "/audit/T-1", None, (SCOPE_AUDIT_READ,)),
     ("GET", "/audit/entry/1/explain", None, (SCOPE_EXPLAIN_READ,)),
     ("GET", "/rings", None, (SCOPE_RINGS_READ, SCOPE_ANALYST)),
+    ("POST", "/auth/ws-ticket", None, (SCOPE_ANALYST, SCOPE_AUDIT_READ, SCOPE_EXPLAIN_READ)),
 )
 
 #: Paths that are unauthenticated on purpose, with the reason.
@@ -57,6 +65,9 @@ PUBLIC_PATHS = {
     "/docs": "schema UI",
     "/docs/oauth2-redirect": "schema UI",
     "/redoc": "schema UI",
+    "/auth/demo-token": "mints a token rather than requiring one; local/ci only (router is not "
+    "even mounted in staging/production, see test_auth_demo_token.py); covered by its own "
+    "test file, not this bearer-token sweep",
 }
 
 #: Routes authenticated by something other than a JWT bearer token, with the reason. Excluded
@@ -126,7 +137,10 @@ class TestAuthenticationIsRequired:
         them without verifying the signature would admit this caller.
         """
         attacker = Settings(
-            environment="ci", jwt_secret_key="an-entirely-different-key-of-sufficient-length"
+            environment="ci",
+            jwt_secret_key="an-entirely-different-key-of-sufficient-length",
+            entity_anonymization_key="an-entirely-different-anonymization-key-of-length",
+            razorpay_webhook_secret="an-entirely-different-webhook-secret-of-length",
         )
         forged = create_access_token(
             subject="attacker", account_id="acct-1", scopes=scopes, settings=attacker
@@ -212,7 +226,10 @@ class TestAuthenticationIsRequired:
             client, "GET", "/transactions", None, headers={"Authorization": "Bearer x.y.z"}
         )
         attacker = Settings(
-            environment="ci", jwt_secret_key="an-entirely-different-key-of-sufficient-length"
+            environment="ci",
+            jwt_secret_key="an-entirely-different-key-of-sufficient-length",
+            entity_anonymization_key="an-entirely-different-anonymization-key-of-length",
+            razorpay_webhook_secret="an-entirely-different-webhook-secret-of-length",
         )
         forged = _request(
             client,
@@ -247,11 +264,23 @@ class TestAuthenticationIsRequired:
         assert malformed.status_code == forged.status_code == stale.status_code == 401
         assert malformed.text == forged.text == stale.text
 
-    def test_every_route_is_covered_by_this_sweep(self, app: FastAPI) -> None:
+    def test_every_route_is_covered_by_this_sweep(self, client: TestClient) -> None:
         """Fail when a route is added without being brought under these tests.
 
         The control that keeps the sweep honest. Without it, the next route to be added is
         defended only by whoever remembers to add it here.
+
+        Phase 9.5 finding: this used to walk ``app.routes`` directly (``getattr(route,
+        "routes", [route])``), which silently broke when FastAPI 0.141.1 changed how
+        ``include_router`` composes routes internally -- mounted sub-routers now appear as
+        ``_IncludedRouter`` objects with no ``.routes`` attribute at all, so ``live`` was
+        computed as the empty set on every run and this assertion passed vacuously regardless
+        of what routes actually existed. Reading the served ``/openapi.json`` instead, exactly
+        as ``test_auth_demo_token.py``'s ``test_the_route_is_absent_from_the_deployed_schema``
+        already does, depends only on FastAPI's stable public contract rather than its routing
+        internals -- and OpenAPI's own path keys are already templated
+        (``/audit/{transaction_id}``), so this no longer needs the concrete-to-template
+        translation the old version did either.
         """
         covered = {path for _, path, _, _ in PROTECTED_ROUTES}
         # Template paths, since the sweep uses concrete ones.
@@ -259,12 +288,12 @@ class TestAuthenticationIsRequired:
         concrete = {"/audit/T-1", "/audit/entry/1/explain"}
         covered = (covered - concrete) | templates
 
-        live = set()
-        for route in app.routes:
-            for candidate in getattr(route, "routes", [route]):
-                path = getattr(candidate, "path", None)
-                if path and path not in PUBLIC_PATHS and path not in WEBHOOK_ROUTES:
-                    live.add(path)
+        schema = client.get("/openapi.json").json()
+        live = {
+            path
+            for path in schema["paths"]
+            if path not in PUBLIC_PATHS and path not in WEBHOOK_ROUTES
+        }
 
         assert live <= covered, f"routes with no authorization test: {sorted(live - covered)}"
 

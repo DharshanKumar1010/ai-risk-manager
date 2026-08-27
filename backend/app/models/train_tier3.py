@@ -2016,10 +2016,17 @@ def render_report(reports: Sequence[CorpusReport], sample: int | None) -> str:
                 "fingerprint is `(card1, card2, card5, addr1)` — so two accounts sharing it "
                 "differ *only* in `d1n`, the inferred account-start day. That is either one "
                 "card fragmented into several inferred identities or one card genuinely "
-                "presenting as several clients, and the graph cannot tell them apart. The "
-                "device-only control, which shares no column with the account id, was run as "
-                "a third configuration and scores far lower (see the table above). Read the "
-                "headline with that gap in mind.",
+                "presenting as several clients, and the graph cannot tell them apart. This is "
+                "a structural claim, not a quantified one: no run in this repo compares the "
+                "device-only (non-circular) fingerprint against the winning configuration at a "
+                "matched `entity_cap`, so there is no clean before/after number for how much of "
+                "the headline the circularity accounts for. The one non-circular run that does "
+                "exist (`entity_cap=50,non_circular_only`, see the table above) is run at a "
+                "*different* cap than the winner (`entity_cap=200`) and scores *higher* than "
+                "the matched-cap circular run at `entity_cap=50`, not lower — so it cannot be "
+                "read as evidence the circular signal is doing most of the work either. Phase "
+                "9.5's audit flagged an earlier version of this note for claiming the opposite "
+                "direction from what the table shows.",
                 "",
             ]
 

@@ -1,9 +1,14 @@
+import { useEffect, useState } from 'react'
 import { DecisionBadge, DegradedBadge } from '@/components/ui/Badge'
 import { useAuth } from '@/hooks/useAuth'
 import { useLiveFeed, type LiveFeedStatus } from '@/hooks/useLiveFeed'
 import { cx } from '@/lib/cx'
-import { formatAmount, formatPercent, formatTime } from '@/lib/format'
+import { formatAmount, formatPercent, formatRelativeTime } from '@/lib/format'
 import type { FeedEvent } from '@/types/api'
+
+/** How often the relative timestamps below re-render. `formatRelativeTime` is pure and takes
+ * "now" explicitly; this is the caller-side refresh its own docstring describes. */
+const RELATIVE_TIME_REFRESH_MS = 5_000
 
 const STATUS_LABEL: Record<LiveFeedStatus, string> = {
   connecting: 'connecting…',
@@ -26,6 +31,12 @@ const STATUS_DOT: Record<LiveFeedStatus, string> = {
 export function LiveFeedPanel({ onDecision }: { onDecision?: (event: FeedEvent) => void }) {
   const { analystToken, status: authStatus } = useAuth()
   const { status, events } = useLiveFeed(authStatus === 'ready' ? analystToken : null, onDecision)
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), RELATIVE_TIME_REFRESH_MS)
+    return () => clearInterval(interval)
+  }, [])
 
   if (authStatus === 'unavailable') return null
   if (authStatus === 'error') return null
@@ -56,7 +67,7 @@ export function LiveFeedPanel({ onDecision }: { onDecision?: (event: FeedEvent) 
               key={event.audit_id}
               className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-console border border-border bg-surface px-3 py-2 font-mono text-xs"
             >
-              <span className="text-text-faint">{formatTime(event.decided_at)}</span>
+              <span className="text-text-faint">{formatRelativeTime(event.decided_at, now)}</span>
               <span className="text-text">{event.transaction_id}</span>
               <DecisionBadge decision={event.decision} />
               <span className="text-text-muted">p={formatPercent(event.risk_probability)}</span>

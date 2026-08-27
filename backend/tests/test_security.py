@@ -8,7 +8,13 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.config import MIN_JWT_SECRET_BYTES, PLACEHOLDER_JWT_SECRET, Settings
+from app.config import (
+    MIN_JWT_SECRET_BYTES,
+    PLACEHOLDER_ENTITY_ANONYMIZATION_KEY,
+    PLACEHOLDER_JWT_SECRET,
+    PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET,
+    Settings,
+)
 from app.core.security import (
     Principal,
     create_access_token,
@@ -36,7 +42,12 @@ def test_token_round_trip(settings: Settings) -> None:
 
 def test_tampered_signature_is_rejected(settings: Settings) -> None:
     """A token signed with a different key must not verify."""
-    foreign = Settings(environment="ci", jwt_secret_key="a-different-key-long-enough-for-hs256")
+    foreign = Settings(
+        environment="ci",
+        jwt_secret_key="a-different-key-long-enough-for-hs256",
+        entity_anonymization_key="a-different-anonymization-key-of-sufficient-length",
+        razorpay_webhook_secret="a-different-webhook-secret-of-sufficient-length-here",
+    )
     token = create_access_token(subject="attacker", settings=foreign)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -67,9 +78,22 @@ def test_garbage_token_is_rejected(settings: Settings) -> None:
 
 @pytest.mark.parametrize("environment", ["staging", "production"])
 def test_placeholder_secret_refuses_to_boot_when_deployed(environment: str) -> None:
-    """A deployed environment must not start on the well-known placeholder key."""
+    """A deployed environment must not start on the well-known placeholder key.
+
+    entity_anonymization_key/razorpay_webhook_secret are set to real values here so the
+    ValidationError this raises is genuinely from reject_placeholder_secret_outside_local's
+    jwt_secret_key check -- both are required fields with no default (Phase 9.5), so omitting
+    them would raise Pydantic's own "field required" error instead, which also mentions the
+    field's name and would make this test pass without ever reaching the check it exists to
+    cover.
+    """
     with pytest.raises(ValueError, match="placeholder"):
-        Settings(environment=environment, jwt_secret_key=PLACEHOLDER_JWT_SECRET)  # type: ignore[arg-type]
+        Settings(
+            environment=environment,  # type: ignore[arg-type]
+            jwt_secret_key=PLACEHOLDER_JWT_SECRET,
+            entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+        )
 
 
 def test_short_signing_key_is_rejected() -> None:
@@ -79,7 +103,49 @@ def test_short_signing_key_is_rejected() -> None:
     PyJWT only warns; for a fraud-detection service a warning is not enough.
     """
     with pytest.raises(ValidationError):
-        Settings(environment="ci", jwt_secret_key="a" * (MIN_JWT_SECRET_BYTES - 1))
+        Settings(
+            environment="ci",
+            jwt_secret_key="a" * (MIN_JWT_SECRET_BYTES - 1),
+            entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+        )
+
+
+def test_environment_is_required() -> None:
+    """Phase 9.5: an unset ENVIRONMENT must fail the boot, not silently default to 'local'
+    and skip every placeholder-refusal guard in a real deployment.
+
+    ``_env_file=None`` disables Settings' own ``.env`` fallback for this one construction:
+    without it, omitting a kwarg here would still resolve from a developer's local ``.env``
+    (which legitimately sets every field, for local dev) rather than exercising the "genuinely
+    unset anywhere" case this test means to cover.
+    """
+    with pytest.raises(ValidationError, match="environment"):
+        Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
+            entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+        )
+
+
+@pytest.mark.parametrize(
+    "omit", ["jwt_secret_key", "entity_anonymization_key", "razorpay_webhook_secret"]
+)
+def test_each_secret_is_required(omit: str) -> None:
+    """Phase 9.5: none of the three secrets may fall back to a placeholder silently -- each
+    must be supplied, in every environment, or the boot fails. See test_environment_is_required
+    for why ``_env_file=None`` is needed here too."""
+    kwargs: dict[str, str | None] = {
+        "environment": "ci",
+        "jwt_secret_key": "a-deployed-signing-key-of-sufficient-length-here",
+        "entity_anonymization_key": "a-deployed-anonymization-key-of-sufficient-length",
+        "razorpay_webhook_secret": "a-deployed-webhook-secret-of-sufficient-length-here",
+        "_env_file": None,
+    }
+    del kwargs[omit]
+    with pytest.raises(ValidationError, match=omit):
+        Settings(**kwargs)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("environment", ["staging", "production"])
@@ -88,11 +154,18 @@ def test_entity_anonymization_placeholder_refuses_to_boot_when_deployed(
 ) -> None:
     """Security-review regression cover: a deployed service must not export Tier-3 entity ids
     anonymized with the well-known placeholder key, which anyone who has read this repo could
-    use to reverse them by dictionary attack."""
+    use to reverse them by dictionary attack.
+
+    razorpay_webhook_secret is set to a real value here for the same reason noted on
+    test_placeholder_secret_refuses_to_boot_when_deployed: omitting a required field raises a
+    different error than the one this test means to cover.
+    """
     with pytest.raises(ValueError, match="entity_anonymization_key"):
         Settings(
             environment=environment,  # type: ignore[arg-type]
             jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
+            entity_anonymization_key=PLACEHOLDER_ENTITY_ANONYMIZATION_KEY,
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
         )
 
 
@@ -117,6 +190,7 @@ def test_razorpay_webhook_secret_placeholder_refuses_to_boot_when_deployed(
             environment=environment,  # type: ignore[arg-type]
             jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
             entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret=PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET,
         )
 
 
@@ -134,12 +208,26 @@ def test_ws_audience_matching_the_api_audience_is_rejected() -> None:
     """The whole safety argument for a separate ws ticket audience -- see
     mint_ws_ticket's docstring -- depends on the two audiences never being equal."""
     with pytest.raises(ValueError, match="jwt_ws_audience"):
-        Settings(environment="ci", jwt_audience="riskiq-api", jwt_ws_audience="riskiq-api")
+        Settings(
+            environment="ci",
+            jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
+            entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+            jwt_audience="riskiq-api",
+            jwt_ws_audience="riskiq-api",
+        )
 
 
 def test_distinct_ws_and_api_audiences_boot_fine() -> None:
     """Guard on the guard."""
-    Settings(environment="ci", jwt_audience="riskiq-api", jwt_ws_audience="riskiq-ws")
+    Settings(
+        environment="ci",
+        jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
+        entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+        razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+        jwt_audience="riskiq-api",
+        jwt_ws_audience="riskiq-ws",
+    )
 
 
 class TestWsTicketAudienceIsolation:
@@ -182,8 +270,18 @@ class TestWsTicketAudienceIsolation:
         assert exc_info.value.status_code == 401
 
     def test_a_ticket_minted_for_one_deployments_settings_is_rejected_by_another(self) -> None:
-        first = Settings(environment="ci", jwt_secret_key="a-signing-key-of-sufficient-length-1")
-        second = Settings(environment="ci", jwt_secret_key="a-signing-key-of-sufficient-length-2")
+        first = Settings(
+            environment="ci",
+            jwt_secret_key="a-signing-key-of-sufficient-length-1",
+            entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+        )
+        second = Settings(
+            environment="ci",
+            jwt_secret_key="a-signing-key-of-sufficient-length-2",
+            entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+        )
         principal = Principal(subject="analyst-1", scopes=("analyst",))
         ticket = mint_ws_ticket(principal, first)
 

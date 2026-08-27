@@ -21,6 +21,13 @@ from app.main import create_app
 #: placeholder key, so it cannot escape into a deployment.
 TEST_SIGNING_KEY = "test-only-signing-key-not-a-real-secret"
 
+#: As of Phase 9.5, environment/jwt_secret_key/entity_anonymization_key/razorpay_webhook_secret
+#: are all required fields with no Pydantic default (see app/config.py) -- every Settings(...)
+#: construction in this suite must supply all four. Not secrets, for the same reason
+#: TEST_SIGNING_KEY isn't: nothing these sign or key exists outside the test process.
+TEST_ANONYMIZATION_KEY = "test-only-anonymization-key-not-a-real-secret"
+TEST_WEBHOOK_SECRET = "test-only-webhook-secret-not-a-real-secret"
+
 
 class PermissiveLimiter:
     """A rate limiter that admits everything.
@@ -127,8 +134,13 @@ class FakeSession:
 
 @pytest.fixture
 def settings() -> Settings:
-    """Return settings pinned to the CI environment with a test-only signing key."""
-    return Settings(environment="ci", jwt_secret_key=TEST_SIGNING_KEY)
+    """Return settings pinned to the CI environment with test-only secrets."""
+    return Settings(
+        environment="ci",
+        jwt_secret_key=TEST_SIGNING_KEY,
+        entity_anonymization_key=TEST_ANONYMIZATION_KEY,
+        razorpay_webhook_secret=TEST_WEBHOOK_SECRET,
+    )
 
 
 @pytest.fixture

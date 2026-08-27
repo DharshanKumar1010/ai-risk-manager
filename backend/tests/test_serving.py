@@ -21,7 +21,7 @@ import pytest
 from app.config import Settings
 from app.core.serving import HistoryRow, ModelBundle, assemble_tier1_vector
 from app.data import features as feature_engineering
-from tests.conftest import TEST_SIGNING_KEY
+from tests.conftest import TEST_ANONYMIZATION_KEY, TEST_SIGNING_KEY, TEST_WEBHOOK_SECRET
 
 BASE_TIME = datetime(2018, 5, 5, 14, 30, tzinfo=UTC)
 
@@ -42,7 +42,12 @@ RAW = {
 @pytest.fixture(scope="module")
 def bundle() -> ModelBundle:
     """Load the shipped models, or skip the module where the artefacts are absent."""
-    settings = Settings(environment="ci", jwt_secret_key=TEST_SIGNING_KEY)
+    settings = Settings(
+        environment="ci",
+        jwt_secret_key=TEST_SIGNING_KEY,
+        entity_anonymization_key=TEST_ANONYMIZATION_KEY,
+        razorpay_webhook_secret=TEST_WEBHOOK_SECRET,
+    )
     try:
         return ModelBundle.load(settings)
     except (FileNotFoundError, RuntimeError, OSError) as exc:
@@ -135,7 +140,12 @@ class TestHistoryAnomalyOnScoringOutcome:
                 for row in reversed(history_rows)
             ]
         )
-        settings = Settings(environment="ci", jwt_secret_key=TEST_SIGNING_KEY)
+        settings = Settings(
+            environment="ci",
+            jwt_secret_key=TEST_SIGNING_KEY,
+            entity_anonymization_key=TEST_ANONYMIZATION_KEY,
+            razorpay_webhook_secret=TEST_WEBHOOK_SECRET,
+        )
 
         outcome, _record = await score_transaction(
             session,
@@ -171,7 +181,12 @@ class TestHistoryAnomalyOnScoringOutcome:
                 for row in reversed(history_rows)
             ]
         )
-        settings = Settings(environment="ci", jwt_secret_key=TEST_SIGNING_KEY)
+        settings = Settings(
+            environment="ci",
+            jwt_secret_key=TEST_SIGNING_KEY,
+            entity_anonymization_key=TEST_ANONYMIZATION_KEY,
+            razorpay_webhook_secret=TEST_WEBHOOK_SECRET,
+        )
 
         outcome, _record = await score_transaction(
             session,

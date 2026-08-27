@@ -65,6 +65,12 @@ services:
       PIPELINE_DATABASE_URL: postgresql+asyncpg://riskiq_pipeline:${RISKIQ_PIPELINE_PASSWORD:-riskiq_pipeline_local_dev}@postgres:5432/riskiq
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-placeholder-change-me-before-deploy}
+      # Both required as of Phase 9.5 (no Pydantic default -- see app/config.py). ENVIRONMENT
+      # is fixed at "local" above, so the placeholder value here never triggers
+      # reject_placeholder_secret_outside_local; it exists only so the container boots without
+      # every developer generating a real key for a local checkout.
+      ENTITY_ANONYMIZATION_KEY: ${ENTITY_ANONYMIZATION_KEY:-dev-only-placeholder-change-me-before-deploy}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-dev-only-placeholder-change-me-before-deploy}
       DATA_DIR: /data
       REPORTS_DIR: /notebooks
       # Set explicitly: the default is derived from the source tree layout, which does not

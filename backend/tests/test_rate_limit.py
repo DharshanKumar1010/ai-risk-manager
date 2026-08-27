@@ -67,6 +67,8 @@ def _limiter(requests: int = 3, failure: Exception | None = None) -> tuple[RateL
     settings = Settings(
         environment="ci",
         jwt_secret_key=TEST_SIGNING_KEY,
+        entity_anonymization_key="test-only-anonymization-key-not-a-real-secret",
+        razorpay_webhook_secret="test-only-webhook-secret-not-a-real-secret",
         rate_limit_requests=requests,
         rate_limit_window_seconds=60,
     )

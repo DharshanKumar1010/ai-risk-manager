@@ -23,9 +23,10 @@ unrouted path would, indistinguishable from a typo.
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.rate_limit import enforce_webhook_rate_limit
 from app.core.security import (
     SCOPE_ANALYST,
     SCOPE_AUDIT_READ,
@@ -98,6 +99,7 @@ class DemoTokenResponse(BaseModel):
     "/demo-token",
     response_model=DemoTokenResponse,
     summary="Mint a short-lived walkthrough token (local/CI only)",
+    dependencies=[Depends(enforce_webhook_rate_limit)],
 )
 async def mint_demo_token(payload: DemoTokenRequest, request: Request) -> DemoTokenResponse:
     """Mint a token carrying exactly the scopes ``PERSONA_SCOPES`` names for the persona.

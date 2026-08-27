@@ -321,6 +321,8 @@ Cost sensitivity, review cost ONLY (the direction that moves the recommendation)
 
 Measures the scoring call only — window in, decision out. Assembling the window from the account's history is Phase 7's scoring endpoint and is budgeted separately.
 
+> **Wall-clock latency on one machine varies run to run and should not be read as a serving guarantee from this number alone.** Two runs of the identical model (`...w15-latent8-ieee-cis-20260823t070529z` and `...20260823t083445z` in `models/registry.json`, same PR-AUC, same `feature_version`) measured p99 at 5.76ms and 45.18ms respectively against this same 50ms budget — the slower run (this report) was taken while Phase 4's graph builds were saturating the CPU, not a regression in this layer. **Use the `...070529z` figures (p99 5.76ms) for anything downstream of this report**, per `BUILD_LOG.md`'s Phase 4 findings section; Phase 10 re-benchmarks on an idle machine before this is quoted as a serving figure.
+
 ## What this does NOT catch
 
 Written from the false negatives actually observed on the held-out test split at the **capacity-constrained** operating point — the one a review team could actually run — not from reasoning about the architecture. BUILD_LOG records that in Phase 2 both such claims were written from reasoning and both turned out to be false.

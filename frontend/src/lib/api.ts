@@ -179,9 +179,12 @@ export function mintDemoToken(persona: Persona, accountId?: string): Promise<Dem
 }
 
 /**
- * POST /auth/ws-ticket. Requires the same scopes `GET /ws/feed` itself requires (`analyst` and
- * `audit:read`) -- mint immediately before each connection attempt, not once and cached: the
- * ticket is deliberately 30 seconds old by design, see backend/app/core/security.py.
+ * POST /auth/ws-ticket. Requires the same scopes `GET /ws/feed` itself requires (`analyst`,
+ * `audit:read`, and `explain:read` -- the feed carries `risk_probability`, the same figure
+ * `explain:read` gates elsewhere on this API, so a token missing it must not mint a ticket
+ * either; Phase 9.5 corrected this comment, which had dropped `explain:read`) -- mint
+ * immediately before each connection attempt, not once and cached: the ticket is deliberately
+ * 30 seconds old by design, see backend/app/core/security.py.
  */
 export function mintWsTicket(token: string): Promise<WsTicketResponse> {
   return request<WsTicketResponse>('POST', '/auth/ws-ticket', undefined, { token })

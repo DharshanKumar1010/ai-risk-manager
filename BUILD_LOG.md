@@ -11,13 +11,14 @@ solved read as more credible to a panel than a smoothed-over success narrative.
 | 1 — Data pipeline & features | **Complete, verified** | Full pipeline runs end to end over both corpora: 590,540 IEEE-CIS + 2,770,409 PaySim rows engineered, split chronologically, and persisted to Postgres and parquet. 157 tests green including a hard leakage check. Detail below. | RLS defined but **not yet effective** (app still connects as superuser — Phase 7); IEEE-CIS `V1`-`V339` carried to parquet but not yet reduced or used (Phase 2); PaySim class balance is non-stationary and name-chaining is measured at 0% — both constrain Phase 4 |
 | 2 — Tier-1 anomaly layer | **Complete, verified** | LightGBM selected over Isolation Forest on validation PR-AUC. IEEE-CIS held-out test **PR-AUC 0.5276** (95% CI 0.5117–0.5462) against a 0.0348 no-skill floor — 15.2x lift; 87% precision at a staffable 1%-flag operating point. Latency p50 5.62ms / p95 6.38ms, ~8x inside the 50ms budget. Detail below. | Catches 24.6% of fraud by count but only **14.6% by value** — recall falls as amount rises; PaySim's 0.9998 is a simulator artefact (`amount == oldbalanceOrg` on 97.5% of fraud, 0 of 412,277 legit rows) and must never be quoted as a headline, nor used to fit the Phase 5 meta-learner; no hyperparameter search run; feature-assembly latency still unmeasured (Phase 7) |
 | 3 — Tier-2 behavioural layer | **Complete, verified** | PyTorch LSTM autoencoder over per-account trailing windows, IEEE-CIS only. Evaluated **per account**, not per transaction. Detail below. | Loses the head-to-head against Tier-1-aggregated; earns its place only as a Phase 5 fusion input, not standalone. Two registry entries answer to this architecture with identical PR-AUC and feature_version but p99 5.76ms against 45.18ms — read `...070529z`, and re-benchmark in Phase 10. Full gap list in the Phase 3 detail section |
-| 4 — Tier-3 graph layer | **Complete, verified** | One Louvain + centrality algorithm over two real graphs. **IEEE-CIS ring-level test PR-AUC 0.6462** (95% CI 0.5703–0.7214) against a 0.1076 base rate — **6.01x lift** on 1,329 rings, corroborated by an independent enrichment check at 6.20x. PaySim ring-level 0.9977 against a 0.8369 base rate — a **1.19x lift, which is close to nothing**, on a corpus whose chain structure is a simulator artefact. Serving is a dictionary lookup, p99 0.003ms. Detail below. | **Tier-3 earns its place on IEEE-CIS and not on PaySim.** `tier3_ring_risk_score` is **not** a proven Phase 5 input — per-transaction PR-AUC is *below* no-skill (0.902x) and Tier-1 fusion is significantly negative (−0.0031, CI [−0.0038, −0.0026]). Operating-point recall 0.112 (IEEE-CIS) / 0.006 (PaySim). Ring metrics exclude rings repeating an earlier one, so they say nothing about persistent rings. Most IEEE-CIS signal is circular with the constructed UID. Full gap list in the Phase 4 detail section |
+| 4 — Tier-3 graph layer | **Complete, verified — headline provisional (see Phase 9.5)** | One Louvain + centrality algorithm over two real graphs. **IEEE-CIS ring-level test PR-AUC 0.6465** (95% CI 0.5700–0.7171) against a 0.1077 base rate — **6.0x lift** on 1,328 rings, corroborated by an independent enrichment check at 6.20x. Retrained twice more in Phase 8 after the ring-ID anonymization fix (see that entry); these are the current authoritative figures, from `tier3-graph-louvain-ieee-cis-20260826t213613z`. PaySim ring-level 0.9977 against a 0.8369 base rate — a **1.19x lift, which is close to nothing**, on a corpus whose chain structure is a simulator artefact. Serving is a dictionary lookup, p99 0.003ms. Detail below. | **Tier-3 earns its place on IEEE-CIS and not on PaySim.** `tier3_ring_risk_score` is **not** a proven Phase 5 input — per-transaction PR-AUC is *below* no-skill (0.902x) and Tier-1 fusion is significantly negative (−0.0031, CI [−0.0038, −0.0026]). Operating-point recall 0.112 (IEEE-CIS) / 0.006 (PaySim). Ring metrics exclude rings repeating an earlier one, so they say nothing about persistent rings. Most IEEE-CIS signal is circular with the constructed UID, structurally rather than as a quantified gap (Phase 9.5). **Reproducibility is provisional**: Phase 9.5 found ring counts and validation PR-AUC drift across three same-seed reruns; the cross-process determinism test only exercises the PaySim path. Treat 0.6465 as provisional pending a determinism fix. Full gap list in the Phase 4 detail section |
 | 5 — Meta-learner + SHAP | **Complete, negative result** | XGBoost fusion over out-of-fold Tier-1 + engineered features, Platt-calibrated, TreeSHAP attribution. Held-out test **PR-AUC 0.4954** (95% CI 0.4791-0.5141) against Tier-1 alone at **0.5276** — paired delta **-0.0322, 95% CI [-0.0373, -0.0273], excluding zero on the negative side**. The ablation retired **all three tier layers**; `tier3_topology` was measurably harmful. Well calibrated (ECE 0.0037). **Gate status: three ml-evaluator rounds returned 6, then 4, then 3 blocking findings; all were fixed and each fix verified directly, but the confirming fourth round did not complete, so the phase is NOT recorded as gate-cleared.** Detail below. | **Tier-1 wins the headline metric; do not ship the meta-learner on PR-AUC.** But at a matched 1% flag rate the fusion is *cheaper* (4,818 vs 4,904 per 1,000) because it catches more fraud **by value** (16.9% vs 15.0%) while catching less by count — a point estimate with no CI, flagged for Phase 6 rather than acted on. The loss is **confounded**: the out-of-fold handicap is real (fold PR-AUC 0.4200-0.5202 against full-train 0.6155) but the shipped booster also early-stopped at **iteration 2**, and the discriminating diagnostic was not run. |
 | 6 — Causal cost layer | **Complete, verified** | Cost-aware ranking over Tier-1's probability and the transaction amount. The shipped `plug_in` policy is **22.41% cheaper** than probability ranking at a matched 1% flag rate — −1,098.48 per 1,000 decisions, bootstrap CI [−1,345.28, −881.81], excluding zero. The secondary hypothesis (cost-sensitive *training* beats cost-sensitive *thresholding*) was tested and came back a **TIE**, as the phase's own algebra predicted. All three gates ran; 17 findings, 16 fixed, 1 escalated and decided. Detail below. | Headline is **regime-dependent** — the advantage shrinks under high-fee assumptions, so 22.41% must be quoted with its cost model ($3 review / $15 chargeback fee). The DR-learner collapses onto the plug-in because no treatment variable exists (every historical transaction was allowed), so **nothing here is a causal effect measured on this data** — `ope_validation.caveat` is not optional. Shipped threshold 90.85 is a *money-scale* score, not a probability |
 | 7 — Backend, audit, security | **Complete, gates cleared on the third round** | Four authenticated endpoints (`POST /score`, `GET /transactions`, `GET /audit/{id}`, `GET /rings`) plus an analyst-scoped `GET /audit/entry/{id}/explain`. **`security-reviewer` returned 3 blocking findings, then 1 more on re-verification; `code-reviewer` returned 5. All were correct.** The worst was an authorization hole — a token with no `account_id` claim read every account's rows, because one sentinel meant both "unrestricted" and "no account". All three blocking findings fixed with regression tests; the code review's top finding is a deliberate carry to Phase 9, reasoned below. JWT on every route with server-side scope and ownership checks; append-only `audit_log` with RLS forced; Redis limiter that **fails closed**; Tier-3 timeout with degraded-mode fallback recorded in the audit row. RLS made *effective* for the first time — `riskiq_app` granted LOGIN and `DATABASE_URL` repointed off the superuser, closing a FAIL carried since Phase 1. Suite 442 → **579 passed, 1 skipped**. Detail below. | **Serving-time feature assembly is the real latency**: p50 34–41ms against the Tier-1 scoring call's 4ms, so total p95 sits at 44–51ms, effectively consuming the 50ms budget that was defined for the scoring call alone. Cost is **flat in history size** — fixed pandas overhead, not the range scan. `transactions.device_info` / `addr1` are new and **unbackfilled**, so familiarity features read as `__missing__` for every pre-Phase-7 row until the pipeline is re-run. The meta-learner is deliberately **not** in the decision path (it loses to Tier-1); Tier-3 annotates but does not move the decision |
-| 8 — React dashboard | Not started | | |
-| 9 — Razorpay webhook integration | Not started | | |
-| 10 — Testing, CI, deployment | Not started | | |
+| 8 — React dashboard | **Complete, verified** | React dashboard (live scorer, cost comparison chart, Tier-3 network graph, metrics panel, decision audit table). Two-token demo mode (`POST /auth/demo-token`, local/ci only). Migration `0003_analyst_session_role.py` also shipped this phase — the real RLS fix Phase 7 named as its own prerequisite (`GRANT riskiq_analyst TO riskiq_app WITH INHERIT FALSE` plus `SET LOCAL ROLE` in `get_analyst_session`), closing that FAIL. Two security findings caught and fixed (dashboard leaking the cost-optimal threshold; Tier-3 "anonymized" ring IDs trivially reversible) — both required a model retrain, which is what moved the Tier-3 headline (see row 4). 698 backend tests passing, frontend typecheck/lint clean. Detail below. | Shipped without a recorded `ml-evaluator` gate despite retraining a model and shipping a metrics dashboard — CLAUDE.md requires one for phases touching training/metrics. Phase 9.5's audit effectively ran that gate retroactively and found the Tier-3 headline drift above; see that entry. |
+| 9 — Razorpay webhook integration | **Complete, verified** | `POST /webhooks/razorpay/transaction` — HMAC-signed (not JWT), scores via the existing pipeline, writes an audit row, returns a `merchant_context` risk block. One BLOCKING security finding (unverified `notes["riskiq_account_id"]` claim) closed with an interim known-account gate; two ml-evaluator findings closed with a `fraud_rate_basis` field and a "what this does not measure" section. 741 passed, 1 skipped. Detail below. | `scored_transactions` ledger and `(account_id, transaction_id)` idempotency remain deferred prerequisites (named by Phase 7, still open). No real merchant/customer identity binding for the webhook's account claim — the known-account gate narrows but does not close that exposure. Full gap list in the Phase 9 entry. |
+| 9.5 — Comprehensive audit & fixes | **Complete** | Six-agent read-only audit (bug hunt, dead code, security, full testing, cross-phase consistency, ml-evaluation) across all 9 phases, followed by a fix pass. Closed 2 new security findings (fail-open `environment` default; a silently-vacuous route-authorization test) and reconciled the Phase 4/8 Tier-3 documentation drift this audit found. Detail below. | Tier-3 determinism and the surrogate-recovery test-split-selection bug (both Phase 4, both re-confirmed still open by this audit) were deliberately left unfixed — see that entry for why. |
+| 10 — Testing, CI, deployment | Not started | | With SEC-1 (fail-open `environment` default) fixed in Phase 9.5, this phase no longer inherits that risk into a real deployment. |
 | 11 — Docs, diagram, pitch, submission | Not started | | |
 
 ---
@@ -641,17 +642,24 @@ Recorded rather than presented as a decisive win.
 
 **Verified end state.** `python -m app.models.train_tier3` builds both graphs, sweeps their
 edge parameters on validation, and scores the held-out test split exactly once per corpus.
-**IEEE-CIS ring-level test PR-AUC 0.6462** (95% CI 0.5703–0.7214) against a **0.1076** ring
-base rate — a **6.01x lift** on 1,329 test rings. **PaySim ring-level 0.9977** against a
+**IEEE-CIS ring-level test PR-AUC 0.6465** (95% CI 0.5700–0.7171) against a **0.1077** ring
+base rate — a **6.0x lift** on 1,328 test rings. **PaySim ring-level 0.9977** against a
 0.8369 base rate — a **1.19x lift**, which is the number that matters and is close to nothing.
 Serving is a dictionary lookup: p50 0.001ms, p99 0.003ms against a 50ms budget. `ruff`,
 `black`, `mypy --strict` and the full suite green; 84 Tier-3 tests, 323 overall.
+
+*(Phase 9.5 note: the IEEE-CIS figures above are the current authoritative ones, from
+`tier3-graph-louvain-ieee-cis-20260826t213613z` — Phase 8's ring-ID anonymization fix retrained
+this model twice more after the run this section originally described, moving PR-AUC from
+0.6462 to 0.6465 and test rings from 1,329 to 1,328. This section's numbers were reconciled to
+match; they were not re-derived from a fresh run. Phase 9.5 also found the reproducibility of
+this figure is provisional — see that entry.)*
 
 **The honest summary of this phase in one paragraph.** Tier-3 earns its place on IEEE-CIS and
 does not earn it on PaySim. On PaySim the amount-and-step pairing rule alone reaches precision
 0.9948 and recall 0.9943 before any graph runs; the graph then adds a 1.19x ranking lift inside
 a candidate population that is already 84% fraud-bearing, and changes no decision the rule had
-not already made. On IEEE-CIS the ring-level detector is real — 6.01x over its floor, with an
+not already made. On IEEE-CIS the ring-level detector is real — 6.0x over its floor, with an
 independent enrichment check agreeing at 6.20x — but its per-transaction projection is *below*
 no-skill and fusing it into Tier-1 makes Tier-1 measurably worse. What this layer has earned is
 ring-level detection on the corpus with genuine shared-entity structure. Nothing more.
@@ -695,7 +703,7 @@ validation transactions and keeps the transaction. Both rates are recorded. Same
 made in declaring Tier-2 per account.
 
 **5. IEEE-CIS ring detection ranks well; its per-transaction projection is worse than random.**
-Ring-level PR-AUC 0.6462 at 6.01x, precision 0.8889 at recall 0.1119 (TN 1,184, FP 2, FN 127,
+Ring-level PR-AUC 0.6465 at 6.0x, precision 0.8889 at recall 0.1119 (TN 1,183, FP 2, FN 127,
 TP 16). Projecting ring membership onto individual transactions collapses it: **0.0314 against
 a 0.0348 floor, a 0.902x lift — below no-skill**. Fusing that with Tier-1 through a
 validation-fitted logistic combiner moves PR-AUC from **0.5276 to 0.5244, a delta of −0.0031
@@ -708,11 +716,16 @@ ring risk, ring size, centrality, membership.
 
 **6. Most of the IEEE-CIS ring signal is circular with the constructed account UID.**
 `account_id` is `c{card1}_a{addr1}_d{d1n}`, so two accounts sharing the winning fingerprint
-`(card1, card2, card5, addr1)` differ *only* in `d1n`. The non-circular control — device
-fingerprint alone, sharing no column with the UID — was run as a third configuration and scores
-far lower on validation. That gap is the honest measure of how much of the headline is "one
-card fragmented into several inferred identities" rather than observed collusion. It is now
-stated in the report prose and the registry notes, not only here.
+`(card1, card2, card5, addr1)` differ *only* in `d1n`. This is a structural claim, not a
+quantified one: no run in this repo compares the non-circular control (device fingerprint
+alone, sharing no column with the UID) against the winning configuration at a matched
+`entity_cap`. The one non-circular run that exists (`entity_cap=50,non_circular_only`) is at a
+different cap than the winner (`entity_cap=200`) and scores *higher* than the matched-cap
+circular run at `entity_cap=50` (0.3145 vs 0.2201), not lower — an earlier version of this
+paragraph, and the generated report prose it fed, both claimed the opposite direction, and
+Phase 9.5's audit caught it. Both are now corrected. `models/registry.json` carries only the
+structured configuration data for each run, not this prose claim, so there was nothing to
+reconcile there.
 
 ### Obstacles hit and how they were solved
 
@@ -729,7 +742,8 @@ made a new key while leaving the ring the same ring. The apparent 2% removal rat
 was evidence the *key* was wrong, not evidence its rings were independent — this log had read
 it the opposite way. De-duplication is now by overlap coefficient ≥ 0.5 against every
 already-kept earlier ring, via an inverted index. PaySim's test rings fell from 18,846 to
-**2,507** and IEEE-CIS's to **1,329**, and the intervals widened accordingly.
+**2,507** and IEEE-CIS's to **1,329** at the time (now 1,328 on the current authoritative run —
+see the Phase 9.5 note above), and the intervals widened accordingly.
 
 **Then the fix for that was itself scoped wrongly.** De-duplication was applied to the scoring
 path as well as the evaluation population, which pushed IEEE-CIS's transaction abstention rate
@@ -854,9 +868,17 @@ suite, which stayed green throughout.
 - **The ring metrics describe rings that do not substantially repeat an earlier one.** A ring
   the scorer has already seen is excluded by construction, so nothing here speaks to persistent
   rings — which in a real deployment are exactly what you would want to catch.
-- **Surrogate ring recovery on PaySim**: precision 0.8189, recall 0.7271, F1 0.7703 at overlap
-  ≥ 0.3, over 2,507 detected against 2,822 unique surrogate rings. No surrogate check exists
-  for IEEE-CIS, because the partition is built from money-flow edges that corpus does not have.
+- **Surrogate ring recovery on PaySim, test-selected, not held-out (Phase 9.5 finding):**
+  precision 0.8189, recall 0.7271, F1 0.7703 at overlap ≥ 0.3, over 2,507 detected against 2,822
+  unique surrogate rings. `add_surrogate_recovery` (`train_tier3.py`) sweeps its overlap grid
+  and picks `best_overlap` by maximising F1 directly against **test** rings, the same B1 finding
+  this file already named below as "not caught by test suite" — restated here because this is
+  the figure that actually gets quoted. This triple is kept, not struck, because it remains
+  load-bearing for the "surrogate recovery and enrichment agree" argument in this phase's honest
+  summary — but it is a test-selected number, not a held-out one, and should be read that way
+  until the overlap threshold is re-selected on validation and PaySim is re-run. No surrogate
+  check exists for IEEE-CIS, because the partition is built from money-flow edges that corpus
+  does not have.
 - **The cost sensitivity sweep is degenerate on IEEE-CIS**, re-choosing a threshold at the
   abstention sentinel and flagging 100% of traffic at every scale — the unbounded
   review-capacity assumption biting as the cost model's own assumption list warns.
@@ -864,43 +886,68 @@ suite, which stayed green throughout.
   because ring scores are heavily tied and no finite threshold lands on the cap.
 - **`max_degree_centrality` can exceed 1.0 on the bipartite graph**, where a member's degree
   counts entity nodes. It is not a fraction and must not be rendered as a percentage in Phase 8.
-- **16 Tier-3 registry entries exist.** The file is append-only and this phase was run
-  to completion 8 times as defects were found in its outputs -- every one of them by
-  reading the run's own output rather than by a failing test. Each entry now records what it
-  supersedes; the authoritative pair is `tier3-graph-louvain-paysim-20260824t023943z` and
-  `tier3-graph-louvain-ieee-cis-20260824t030009z`.
+- **18 Tier-3 registry entries exist** (16 at the time this phase closed; two more IEEE-CIS
+  reruns were appended in Phase 8 after the ring-ID anonymization fix — see that phase's entry).
+  The file is append-only and this phase was run to completion 8 times as defects were found in
+  its outputs -- every one of them by reading the run's own output rather than by a failing
+  test. Each entry now records what it supersedes; the current authoritative pair is
+  `tier3-graph-louvain-paysim-20260824t023943z` and
+  `tier3-graph-louvain-ieee-cis-20260826t213613z` (superseding the `...20260824t030009z` this
+  section originally named — PR-AUC 0.6462 -> 0.6465, 1,329 -> 1,328 test rings).
 - **The PaySim `heldout_test` has no top-level `pr_auc`**, only the nested `ring_level` block,
   because the ring is its unit. Any consumer indexing `entry["heldout_test"]["pr_auc"]` must
   handle that.
 
 
-## Phase 4 — Tier-3 Ring Detection
+### Condensed summary (merged from a duplicate "Phase 4" section, Phase 9.5)
+
+*(This was originally a second, separate `## Phase 4` header — two sections for one phase,
+with overlapping and, as Phase 9.5's audit found, divergent content. Merged into a subsection
+here; figures below are reconciled to match the narrative section above.)*
 
 **Status:** Complete (with documented limitations)
 
 **Results:**
-- IEEE-CIS ring-level PR-AUC 0.6462 (95% CI 0.5703-0.7214), 6.01x lift over the 0.1076 ring
-  base rate, precision 0.8889/recall 0.1119 at the 1% review-capacity cap, on 1,329 test rings
+- IEEE-CIS ring-level PR-AUC 0.6465 (95% CI 0.5700-0.7171), 6.0x lift over the 0.1077 ring
+  base rate, precision 0.8889/recall 0.1119 at the 1% review-capacity cap, on 1,328 test rings
 - PaySim ring-level PR-AUC 0.9977 (1.19x lift over a 0.8369 base rate, simulator/pairing-rule artifact)
 - Per-transaction scalar projection: 0.0314 vs 0.0348 floor (below no-skill)
 - Fusion with Tier-1: delta -0.0031 (CI excludes zero, significantly negative)
 
 **Known Confounds & Limitations:**
-- B1: `add_surrogate_recovery` selects on test split for F1 sweep — not caught by test suite
+- B1: `add_surrogate_recovery` selects on test split for F1 sweep — not caught by test suite at
+  the time, and per Phase 9.5's audit, **still not fixed**. See the surrogate-recovery bullet
+  above for the figure this affects.
 - B2: Constant-ranker interval derivation: pairing doesn't avoid base-rate shifting as claimed
-- B5: Circularity evidence confounded by mismatched entity_cap (main 200 vs control 50) and base rates
+- B5: Circularity evidence confounded by mismatched entity_cap (main 200 vs control 50) and base
+  rates. Phase 9.5 sharpened this: it is not just confounded, the two comparisons in this
+  document previously disagreed on which direction the confound even ran — see the circularity
+  finding in the narrative section above for the corrected reading.
+- **Reproducibility is provisional (Phase 9.5 finding).** Three same-seed, same-`feature_version`
+  reruns of this training script produced different ring counts (321/320/322 non-circular rings;
+  1,329/1,328/1,328 test rings) and a validation PR-AUC swing of 0.0095 on the exact sweep that
+  selects the shipped configuration. The cross-process determinism test (`test_tier3.py`) only
+  exercises the PaySim synthetic fixture, never the IEEE-CIS path where the drift occurs — not
+  fixed in Phase 9.5, deliberately, to avoid a training rerun this close to the deadline.
 - PaySim result carries DO-NOT-QUOTE caveat (simulator artifact, not generalizable)
 - **Corrected 2026-08-24 (Phase 5 pre-flight):** this block previously reported the IEEE-CIS
   ring result as 0.8378 (3.67x). That pair belongs to the superseded runs `...20260823t171430z`
   and `...20260823t182232z` (ring base rate 0.2285 over 3,488 rings) and was never refreshed
-  after the final run. The authoritative entry is `tier3-graph-louvain-ieee-cis-20260824t030009z`,
-  which agrees with the narrative section above and with `notebooks/tier3_report.md:163`.
-  Ring counts fell 4,443 -> 3,488 -> 1,329 across runs as ring de-duplication tightened.
+  after the final run. The authoritative entry was `tier3-graph-louvain-ieee-cis-20260824t030009z`
+  at the time; Phase 8 superseded it twice more (see above) and Phase 9.5 reconciled this section
+  to match. The dead reference this line originally made to `notebooks/tier3_report.md:163` is
+  removed — that file is 154 lines long and always was; the circularity note it meant to point
+  at is in that report's own callout block near the top.
+  Ring counts fell 4,443 -> 3,488 -> 1,329 -> 1,328 across runs as ring de-duplication tightened
+  and Phase 8 retrained.
 
 **For Phase 5:**
 - Use ring-level features (from `ring_membership`, `entity_involvement`), NOT the per-transaction `ring_risk_score` scalar
 - Tier-3 will likely not survive fusion; expect meta-learner to drop it
-- IEEE-CIS signal is partially UID-circular (non-circular control at matched cap: 0.3054 vs 0.2181)
+- IEEE-CIS signal is partially UID-circular — see the corrected circularity finding in the
+  narrative section above; the specific comparison numbers this line previously cited (0.3054 vs
+  0.2181) were from an earlier run and are superseded by the report table's current 0.3145 vs
+  0.2201, at mismatched `entity_cap`, per that finding.
 
 **Recommendation:** Tier-1 carries the system. Proceed to Phase 5 meta-learner expecting Tiers 2-3 to add minimal value. This is an honest finding, not a failure.
 
@@ -1244,9 +1291,13 @@ At a matched 1% flag rate on held-out test (n=88,581, positives=3,083):
 | `learned_loss` vs `probability` | −970.35 (−19.79%) | [−1,189.92, −769.45] | excludes zero |
 | `learned_loss` vs `plug_in` | +128.13 (+3.37%) | [−30.41, +300.03] | **TIE** |
 
-The baseline row reproduces Phase 2 and Phase 5 exactly — PR-AUC 0.5276, value recall 0.1500, cost
-4,902.49 against Phase 5's 4,903.53 — which is the cross-phase consistency check that makes the rest
-believable.
+The baseline row reproduces Phase 2 and Phase 5's PR-AUC and value recall exactly — 0.5276 and
+0.1500 — which is the cross-phase consistency check that makes the rest believable. The cost
+figure itself does not match exactly (4,902.49 here vs Phase 5's 4,903.53): both runs share
+identical precision/recall (0.8646/0.2485) at the matched 1% flag rate, so the difference is a
+quantile tie-break at the cut selecting a different marginal row between the two runs, not a
+different model or a different split. Flagged by Phase 9.5's audit for the earlier, inaccurate
+"reproduces... exactly" wording, which named a number this section's own table did not match.
 
 **Count recall falls 43% while value recall rises 147%.** It is not finding more fraud; it is finding
 more expensive fraud. That is also the argument against a leak: PR-AUC *drops* to 0.3194, nowhere near
@@ -1854,16 +1905,35 @@ handler, so FastAPI's default 422 echoes submitted values back for schema-level 
 - D3 force-directed Tier-3 network graph (live from GET /rings)
 - Responsive design + a11y (keyboard navigation, reduced-motion respected)
 - Demo token endpoint (POST /auth/demo-token) for walkthrough
+- **Migration `0003_analyst_session_role.py`** — the real RLS fix Phase 7's known gaps named as
+  a prerequisite for this phase ("the `riskiq_analyst` database role is inert... implement it
+  properly before Phase 8 builds on it"). Grants `riskiq_analyst` to `riskiq_app` with
+  `WITH INHERIT FALSE`, and `app/db/session.py`'s `get_analyst_session` now issues
+  `SET LOCAL ROLE riskiq_analyst`, so the three analyst `USING (true)` policies defined in
+  revision 0002 are effective for the first time rather than merely defined. This shipped in
+  this phase but was never recorded in this entry until Phase 9.5's audit found the gap
+  invisible in the log meant to record it.
 
 **Security findings & fixes:**
 - Found & fixed: dashboard was leaking Tier-1's cost-optimal threshold to unauthenticated users
 - Found & fixed: Tier-3 ring "anonymized" IDs were trivially reversible to original merchant IDs
-- Both fixes: code changed + model retrained, fix is live in the artifact
+- Both fixes: code changed + model retrained, fix is live in the artifact — retraining Tier-3
+  IEEE-CIS twice is also what moved its headline PR-AUC from 0.6462 to 0.6465 (row 4 in the
+  status table above), which this entry did not record at the time either. See Phase 9.5.
+
+**Gate status: no `ml-evaluator` round is recorded for this phase**, despite retraining a
+model and shipping a metrics dashboard — CLAUDE.md requires that gate "for anything touching
+model training or metrics." Phase 9.5's audit functioned as that gate retroactively and found
+exactly what running it at the time would likely have caught: the Tier-3 headline moved and
+BUILD_LOG was never updated to match (see Phase 9.5's entry).
 
 **Test suite:** 698 backend tests passing, frontend typecheck/lint clean
 
 **Known gaps (not blocking):**
-- One BUILD_LOG figure from Phase 2 is now stale (recorded for reference)
+- The Tier-3 headline this phase's retrain produced was not reconciled into BUILD_LOG at the
+  time — closed retroactively in Phase 9.5. (An earlier version of this line said "one BUILD_LOG
+  figure from Phase 2 is now stale," naming neither the phase nor the figure correctly; this is
+  the corrected, specific version of that note.)
 
 **Next:** Phase 9 (Razorpay webhook integration)
 
@@ -2048,13 +2118,30 @@ unknown-account gate, audit write, redelivery, rate limiting, `merchant_context`
 against a dedicated stub session), new `test_webhook_session.py` (RLS wiring: neither webhook
 session dependency ever issues `SET LOCAL ROLE`), `test_api_security.py`'s
 `TestWebhookAuthenticationIsHMACNotJWT`, and `test_serving.py`'s
-`TestHistoryAnomalyOnScoringOutcome`.
+`TestHistoryAnomalyOnScoringOutcome`. Full suite: **741 passed, 1 skipped** (the pre-existing
+database-unavailable skip, unchanged), up from 698 at Phase 8. Not recorded at the time this
+phase closed — added by Phase 9.5, which is also where this count was actually run and
+confirmed rather than estimated.
 
-**Known gaps (not blocking, carried forward explicitly):**
-- No `scored_transactions` ledger — see the persistence-gap decision above. Still Phase 7's
-  named prerequisite, still open.
-- No idempotency on repeated `(account_id, transaction_id)` — still open, for both `POST /score`
-  and this webhook.
+**Known gaps, carried forward explicitly (Phase 9.5: relabeled "deferred prerequisites" —
+Phase 7 named both of the first two a prerequisite for this phase, and "not blocking" softened
+that word without either being closed):**
+- **Deferred prerequisite: no `scored_transactions` ledger** — see the persistence-gap decision
+  above. Still Phase 7's named prerequisite, still open.
+- **Deferred prerequisite: no idempotency** on repeated `(account_id, transaction_id)` — still
+  open, for both `POST /score` and this webhook.
+- **Carried from Phase 7, still open: `transactions.device_info`/`addr1` are unbackfilled.**
+  Familiarity features (`device_is_new`, `device_mismatch`, `addr_is_new`, `addr_mismatch`)
+  still read the `__missing__` sentinel for every pre-Phase-7 row until the Phase 1 pipeline is
+  re-run. This phase's webhook is the first live-traffic consumer of those features via
+  `score_transaction`'s assembly path, which makes the gap more load-bearing than when Phase 7
+  first recorded it, not less — carried forward explicitly rather than silently dropped, which
+  is what happened to it between Phase 7 and Phase 8.
+- **Carried from Phase 2, corrected: `OnlineRecalibrator` still has no labelled feedback path.**
+  Phase 2's docstring promised one would exist "until Phase 9" — this phase does not supply it
+  (`audit_log` records only this service's own decision, never a confirmed outcome), and that
+  promise was corrected in place rather than left to mislead the next reader (see
+  `app/models/tier1_anomaly.py` and `app/models/README.md`).
 - **No real merchant/customer identity binding for `notes["riskiq_account_id"]`** — see the
   BLOCKING security finding above. `_require_known_account` narrows but does not close the
   exposure; an attacker who already knows or guesses a real, existing `account_id` can still
@@ -2076,4 +2163,151 @@ session dependency ever issues `SET LOCAL ROLE`), `test_api_security.py`'s
   this phase (security-checklist item 1.4) — no shell was available to the reviewing agent.
   Carried forward from Phase 7's known gaps, unchanged.
 
-**Next:** Phase 10 (testing, CI, deployment).
+**Next:** Phase 9.5 (comprehensive audit and fix pass), then Phase 10.
+
+## Phase 9.5 — Comprehensive Audit & Fixes
+
+**What this phase was.** A full, explicitly read-only audit across the entire project —
+backend, frontend, models, docs, tests, infra — followed by a separate fix pass acting only on
+confirmed findings. Six parallel review passes (security, ml-evaluation, two independent bug
+hunts covering the ML core and the API/serving layer, dead-code, cross-phase consistency plus a
+forward-looking feature catalog) plus direct hands-on verification of the two highest-stakes
+claims before anything was fixed.
+
+**What the audit found, by dimension:**
+- **Security — 2 new BLOCKING findings, 1 already-known finding re-confirmed.**
+  1. `environment` defaulted to `"local"`, which silently disabled all three placeholder-secret
+     refusal guards and mounted the unauthenticated `POST /auth/demo-token` token minter
+     whenever `ENVIRONMENT` was left unset in a real deployment. Not live-exploitable at audit
+     time (no production deployment config exists anywhere in this repo yet), but a real
+     violation of the fail-closed discipline applied everywhere else, and a landmine for
+     Phase 10.
+  2. `test_every_route_is_covered_by_this_sweep` (`test_api_security.py`) was **silently
+     checking nothing** — confirmed directly by reproducing its exact logic standalone, not
+     just by reading it. A FastAPI version change (0.141.1) made `include_router`'s composed
+     routes appear as `_IncludedRouter` objects with no `.routes` attribute, so the sweep's
+     `live` set was always empty and `assert live <= covered` passed vacuously regardless of
+     what routes existed or whether any were tested. Fixing it (reading `/openapi.json`
+     instead, matching a more version-resilient pattern already used one file over) immediately
+     surfaced three real, previously-invisible coverage gaps (`GET /audit`, `POST
+     /auth/ws-ticket` — both correctly authenticated in production code, just untested by this
+     sweep; `POST /auth/demo-token` — correctly unauthenticated by design, just uncategorized).
+  3. The Phase 9 webhook's known-account gate (`_require_known_account`) was re-confirmed still
+     present and working exactly as documented — an interim mitigation, not a full identity
+     binding, as already recorded.
+- **ML evaluation — 7 BLOCKING findings, all documentation drift or a re-confirmed-open Phase 4
+  gap, none requiring Tiers 1/2/the meta-learner/the cost layer to be re-run.** The Tier-3
+  IEEE-CIS headline (PR-AUC, CI, ring count, lift) had drifted stale in `BUILD_LOG.md` after
+  Phase 8 retrained the model twice for its ring-ID anonymization fix and never reconciled the
+  narrative text describing it; the circularity caveat's own supporting comparison was stated
+  backwards in two places (claimed the non-circular control "scores far lower" when the report's
+  own table showed it scoring higher at the matched cap); Tier-3's cross-process determinism
+  test was found to only exercise the PaySim path, and three same-seed IEEE-CIS reruns produced
+  different ring counts and a validation-PR-AUC swing on the selection sweep; the PaySim
+  surrogate-ring-recovery overlap threshold was re-confirmed still selected on the test split (a
+  Phase 4 finding, never fixed); the status table listed Phases 8 and 9 as "Not started" despite
+  both being fully shipped; Phase 8 had no recorded `ml-evaluator` gate despite retraining a
+  model and shipping a metrics dashboard; Phase 9's own test count was never recorded. This
+  phase's own two prior ml-evaluator findings (the `fraud_rate_last_100` proxy caveat and the
+  "what merchant_context does not measure" section) were independently re-verified as genuinely
+  fixed, not just claimed.
+- **Bug hunt (ML core):** no blocking issues. One should-fix (`validation_slices` cuts by row
+  position rather than strict timestamp, unlike every other split boundary in the project — not
+  fixed this phase, left as a should-fix for later since it does not cross the train/test
+  boundary).
+- **Bug hunt (API/serving):** no blocking issues. Fixed: an O(n²) loop in
+  `_prior_velocity_baseline` (Phase 9's own code, this session) that ran unconditionally on
+  every `score_transaction` call including `POST /score`; an unhandled `OverflowError` on a
+  malformed webhook `created_at`. Not fixed, left as should-fix: feature assembly + Tier-1
+  inference + SHAP explanation run synchronously on the event loop rather than in the dedicated
+  executor Tier-3's lookup already uses; `GET /transactions` has no `source_dataset` scoping
+  unlike every other account-scoped read.
+- **Dead code:** the codebase was unusually clean — zero unused-import/unreachable-code findings
+  from static analysis, no commented-out blocks, no duplicate registry entries. Six small
+  orphaned functions/properties found; four removed this phase (`GraphSnapshot.node_count`/
+  `edge_count`, `CostModel.with_unit`, `FeatureDefinition.to_registry_entry` — each confirmed to
+  have zero call sites and, where relevant, a confirmed working replacement path), one wired in
+  rather than deleted (`formatRelativeTime`, genuinely built for a live-updating feed and never
+  connected — now powers `LiveFeedPanel`'s timestamps with a 5s refresh, with a new
+  `format.test.ts`), two kept deliberately (`getTransactions` — likely scaffolding for a later
+  phase's transactions view; `EntityGraph.dirty_accounts` — explicitly documented forward-
+  looking scaffolding for an incremental-graph rebuild the phase brief names as the project's
+  highest-leverage unbuilt enhancement).
+- **Cross-phase consistency:** the BUILD_LOG status table's Phase 8/9 rows, a second "Phase 8"
+  RLS fix invisible in its own entry, a stale README auth claim, a JSDoc comment naming 2
+  required scopes where the code requires 3, and a config field with no `.env.example` line
+  were all found and fixed this phase — see the individual fixes below.
+- **Feature opportunity catalog:** 12 items cataloged for a future "Future Work" section
+  (Phase 9.6), none built. Highest-leverage: the `scored_transactions` ledger and
+  `(account_id, transaction_id)` idempotency (both already Phase 7 prerequisites), a real
+  identity binding for the webhook's account claim, and the Tier-3 determinism fix.
+
+**What was fixed this phase:**
+- `backend/app/config.py`: `environment`, `jwt_secret_key`, `entity_anonymization_key`, and
+  `razorpay_webhook_secret` are now required fields with no default — an unset or placeholder
+  value fails the boot in every environment, not only a deployed one. `docker-compose.yml`
+  updated to supply the two newly-required secrets for local dev (same placeholder value
+  `JWT_SECRET_KEY` already used, safe because `ENVIRONMENT=local` there means the
+  placeholder-refusal validator never fires). A local `backend/.env` was created (gitignored,
+  matching the documented "copy to .env" workflow) so `app.main`'s module-level `app =
+  create_app()` — needed for `uvicorn app.main:app` — keeps working without every developer
+  hand-generating real secrets for local dev.
+- `backend/app/api/auth.py`: `POST /auth/demo-token` now carries `enforce_webhook_rate_limit`
+  (the IP-keyed variant, since this route has no bearer token to key on either) — previously
+  the only route on the service with no rate limit at all.
+- `backend/tests/test_api_security.py`: the route-coverage sweep now reads `/openapi.json`
+  instead of walking `app.routes` internals; `PROTECTED_ROUTES` gained `GET /audit` and
+  `POST /auth/ws-ticket`; `PUBLIC_PATHS` gained `POST /auth/demo-token` with its reason. Verified
+  the fix is real (not just passing) by reproducing the sweep against a throwaway unguarded
+  route added directly to a live `TestClient` app object — never touching tracked source, so
+  there was nothing to revert.
+- Tier-3 documentation reconciled to the current authoritative registry entry
+  (`tier3-graph-louvain-ieee-cis-20260826t213613z`: PR-AUC 0.6465, CI [0.5700, 0.7171], 1,328
+  test rings, 6.0x lift) everywhere it was cited stale, in both `BUILD_LOG.md` and the generated
+  `notebooks/tier3_report.md`; the circularity claim corrected in both the report and its
+  generating source (`train_tier3.py`) to state plainly that no matched-`entity_cap` comparison
+  exists, rather than asserting a direction the data does not show; the two duplicate "Phase 4"
+  BUILD_LOG sections merged into one; the surrogate-recovery triple relabeled "test-selected, not
+  held-out" rather than struck (it remains load-bearing for this phase's own honest-summary
+  argument); Tier-3's registry-entry count corrected (16 -> 18) and the authoritative pointer
+  updated.
+- The Tier-2 latency caveat ("use the `...070529z` figures, not the CPU-contended
+  `...083445z` run") added directly into `train_tier2.py`'s `render_report` output and into the
+  already-committed `notebooks/tier2_report.md`, so it survives the next regeneration instead of
+  needing to be remembered.
+- The Phase-2-cost-baseline "reproduces... exactly" claim corrected (the two figures differ by a
+  quantile tie-break, not by "exactly" matching); the losing PaySim Tier-1 candidate's PR-AUC
+  (0.9999) no longer conflated with the registered, shipped model's actual figure (0.9998) in
+  the three places that were asserting it as current fact rather than describing history; the
+  positional `serving.py` registry citation ("entry 25") replaced with the actual `model_id`.
+- Dashboard: Tier-3's metrics panel now renders its false-positive-cost note (previously only
+  Tier-1 did), with the unit made explicit (`rings`, not `transactions` — the exact 60x
+  misreading a Phase 4 obstacle already found once); the cost note states that two of five
+  underlying assumptions are deliberately withheld, pointing to where the full list lives.
+- `README.md`'s route table and auth description corrected (the webhook is HMAC-authenticated,
+  not bearer-token, and four shipped routes were missing entirely); `mintWsTicket`'s JSDoc
+  corrected to name all three required scopes, not two; `pipeline_database_url` added to
+  `.env.example`; the stale "no labelled feedback path until Phase 9" promise in
+  `OnlineRecalibrator`'s docstring and `app/models/README.md` corrected to state plainly that
+  path still does not exist; Phase 9's known-gaps re-labeled "deferred prerequisites" (Phase 7's
+  own word) rather than "not blocking", and the unbackfilled-`device_info`/`addr1` gap explicitly
+  carried forward into Phase 9's entry, since Phase 9's webhook is its first live-traffic
+  consumer.
+
+**Deliberately left unfixed, and why:** Tier-3's determinism bug (root cause identified —
+the cross-process guard needs extending to the IEEE-CIS path — but not fixed) and the
+surrogate-recovery test-split-selection bug (fix identified — sweep on validation, not test —
+but not applied) both require a training rerun on at least one corpus. Fixing either this close
+to the deadline, in the same pass as a large documentation-reconciliation and security-fix
+change, risked exactly the kind of untracked side effect this audit exists to catch. Both are
+recorded as open, with their fixes specified, rather than silently left for someone to
+rediscover.
+
+**Verification:** full backend suite **759 passed, 1 skipped** (up from 741; new coverage:
+`test_environment_is_required`, `test_each_secret_is_required`, the route-sweep fix, rate-limit
+tests on the demo-token route), `ruff` and `mypy app/` clean. Frontend: **30 tests passed** (up
+from 23; new `format.test.ts`), `oxlint`/`tsc` clean (4 pre-existing, unrelated warnings). No
+regressions found.
+
+**Next:** Phase 9.6 (presentation pass — README, executive summary, dashboard copy; no new
+models, endpoints, or metrics), then Phase 10 (testing, CI, deployment).

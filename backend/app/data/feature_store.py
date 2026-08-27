@@ -130,17 +130,6 @@ class FeatureDefinition:
         digest = sha256(self.canonical_payload.encode("utf-8")).hexdigest()
         return FEATURE_VERSION_PREFIX + digest[:FEATURE_VERSION_HASH_CHARS]
 
-    def to_registry_entry(self) -> dict[str, Any]:
-        """Return the record shape appended to ``models/registry.json``."""
-        return {
-            "feature_version": self.feature_version,
-            "source_dataset": self.source_dataset,
-            "feature_count": len(self.feature_names),
-            "feature_names": sorted(self.feature_names),
-            "parameters": dict(self.parameters),
-            "encoder_digest": self.encoder_digest,
-        }
-
     def describe(self) -> str:
         """Return a human-readable block for the data-quality report."""
         lines = [

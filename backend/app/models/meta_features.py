@@ -445,9 +445,11 @@ def require_ieee_cis(source: SourceDataset) -> None:
 
     PaySim is barred by measurement, not by preference. Phase 2 found ``amount ==
     oldbalanceOrg`` on 97.49% of PaySim fraud and on 0 of 412,277 legitimate rows, which drives
-    Tier-1's PaySim PR-AUC to 0.9999. A meta-learner fitted there would learn "Tier-1 is always
-    right" from a simulator's pairing rule and carry that weighting into a fusion that is
-    supposed to be measuring exactly the opposite question. Tier-2 has no PaySim model at all,
+    Tier-1's PaySim PR-AUC to 0.9998 (the registered matched-inputs model; a losing full-inputs
+    candidate reached 0.9999 and was never selected). A meta-learner fitted there would learn
+    "Tier-1 is always right" from a simulator's pairing rule and carry that weighting into a
+    fusion that is supposed to be measuring exactly the opposite question. Tier-2 has no PaySim
+    model at all,
     and Tier-3 abstains on 100% of PaySim test transactions.
 
     Raises:

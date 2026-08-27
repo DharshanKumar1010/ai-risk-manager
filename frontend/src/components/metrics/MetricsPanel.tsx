@@ -99,6 +99,7 @@ export function MetricsPanel() {
             {tier3.pr_auc_ci95[1].toFixed(4)}]) — {tier3.pr_auc_no_skill_floor.toFixed(4)}{' '}
             no-skill floor
           </p>
+          <FalsePositiveCostNote cost={tier3.false_positive_cost} unit="rings" />
         </div>
       )}
 
@@ -191,15 +192,19 @@ function Panel({ children }: { children: React.ReactNode }) {
  */
 function FalsePositiveCostNote({
   cost,
+  unit = 'transactions',
 }: {
   cost: NonNullable<typeof METRICS.tier1>['false_positive_cost']
+  /** Phase 9.5: made explicit after a prior bug misread this denominator by 60x for Tier-3,
+   * where the unit is rings, not transactions -- see BUILD_LOG.md's Phase 4 obstacle section. */
+  unit?: 'transactions' | 'rings'
 }) {
   return (
     <div className="space-y-1 font-sans text-xs text-text-faint">
       <p>
         Total estimated cost ${cost.total_cost.toLocaleString()} on this split (
-        {cost.false_positives.toLocaleString()} false positives, {cost.false_negatives.toLocaleString()}{' '}
-        false negatives) — an estimate under stated assumptions rather than ground truth.
+        {cost.false_positives.toLocaleString()} false-positive {unit}, {cost.false_negatives.toLocaleString()}{' '}
+        false-negative {unit}) — an estimate under stated assumptions rather than ground truth.
       </p>
       {cost.assumptions.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-4">
@@ -208,6 +213,11 @@ function FalsePositiveCostNote({
           ))}
         </ul>
       )}
+      <p className="italic">
+        Two of the five underlying cost-model assumptions (the review cost and chargeback fee
+        figures) are withheld here, not shown above — see the module comment on this component
+        for why. Full list in <code>backend/app/models/README.md</code>.
+      </p>
     </div>
   )
 }

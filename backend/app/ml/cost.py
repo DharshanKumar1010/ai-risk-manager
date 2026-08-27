@@ -24,7 +24,7 @@ loss stays comparable across the two, which is the only thing that transfers.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -97,10 +97,6 @@ class CostModel:
             chargeback_fee=DEFAULT_CHARGEBACK_FEE * ratio,
             units=units,
         )
-
-    def with_unit(self, unit_noun: str) -> "CostModel":
-        """Return a copy whose cost figures are labelled per ``unit_noun``."""
-        return replace(self, unit_noun=unit_noun)
 
     def scaled_by(self, factor: float) -> "CostModel":
         """Return this model with both cost parameters multiplied by ``factor``."""
