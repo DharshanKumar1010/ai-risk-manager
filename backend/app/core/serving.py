@@ -37,7 +37,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -108,12 +108,44 @@ def shutdown_tier3_executor() -> None:
 
 
 @dataclass(frozen=True)
+class HistoryAnomalyFeatures:
+    """The deviation-from-own-history subset of the assembled Tier-1 vector.
+
+    Carried on :class:`ScoringOutcome` so a caller building risk context reads these off the
+    vector :func:`score_transaction` already assembled, instead of re-querying
+    :func:`read_account_history` for the same window a second time. Today the only caller is
+    the Phase 9 webhook's ``merchant_context`` block.
+
+    ``amount_zscore_vs_own_history`` and the ``velocity_count_*`` fields are read directly from
+    the assembled :class:`~app.data.schema.TransactionFeatures`, so they are ``None`` whenever
+    Tier-1's fitted spec did not select that column as a model feature (measured per corpus by
+    ``MAX_NULL_RATE``) -- not only when the account has too little history to compute one.
+
+    ``prior_velocity_count_1h_mean``/``std`` are not a Tier-1 model input and are not produced
+    by ``app.data.features``: they summarise the account's own trailing-1h transaction count as
+    measured at each of its prior transactions, computed directly from the same ``history`` rows
+    already fetched, for :func:`app.core.merchant_context.compute_merchant_context`'s
+    ``velocity_anomaly`` flag. ``None`` below :data:`app.data.features.ZSCORE_MIN_PRIOR`
+    observations, matching the same minimum the amount z-score requires.
+    """
+
+    amount_zscore_vs_own_history: float | None
+    velocity_count_1h: float | None
+    velocity_count_24h: float | None
+    velocity_count_7d: float | None
+    prior_velocity_count_1h_mean: float | None
+    prior_velocity_count_1h_std: float | None
+
+
+@dataclass(frozen=True)
 class ScoringOutcome:
     """Everything one scoring call produced, before anything is chosen for the response.
 
     Deliberately carries *more* than any response body will: ``cost`` and ``top_features`` are
     audit-only, and keeping them on a separate object from the response schema means excluding
-    them is structural rather than a thing a route has to remember.
+    them is structural rather than a thing a route has to remember. ``history_anomaly`` is the
+    one field on this object that a response is allowed to derive from -- see
+    :class:`HistoryAnomalyFeatures`.
     """
 
     decision: Decision
@@ -122,6 +154,7 @@ class ScoringOutcome:
     tier3: Tier3Result | None
     cost: DecisionCost
     top_features: tuple[tuple[str, float], ...]
+    history_anomaly: HistoryAnomalyFeatures
     model_versions: dict[str, str]
     feature_version: str
     degraded: bool
@@ -356,6 +389,46 @@ async def read_account_history(
     ]
     rows.reverse()
     return rows
+
+
+def _prior_velocity_baseline(history: list[HistoryRow]) -> tuple[float | None, float | None]:
+    """Return (mean, std) of the account's own trailing-1h transaction count, measured at each
+    of its prior transactions -- the baseline :class:`HistoryAnomalyFeatures` compares the
+    incoming transaction's own ``velocity_count_1h`` against.
+
+    Deliberately not routed through ``app.data.features.add_velocity_features``: that pipeline
+    is the single source of truth for what Tier-1 *scores on*, and reusing it here would take a
+    dependency this summary statistic does not need for a materially different purpose -- a
+    diagnostic field on ``merchant_context``, not a model input. This is a plain trailing-window
+    count over ``history``'s own event times, the same rows :func:`score_transaction` already
+    fetched, so no new query is issued.
+
+    Returns:
+        ``(None, None)`` when fewer than ``ZSCORE_MIN_PRIOR`` prior transactions exist -- too
+        few to say what "usual" looks like for this account.
+    """
+    if len(history) < feature_engineering.ZSCORE_MIN_PRIOR:
+        return None, None
+    window = timedelta(hours=1)
+    times = [row.event_time for row in history]
+
+    # Two-pointer sliding window, O(n) -- not the O(n^2) pairwise comparison this reads like at
+    # a glance. This runs unconditionally on every score_transaction call (POST /score included,
+    # not only the webhook that reads its output), so its cost is on the real-time scoring path
+    # regardless of who consumes the result; account_history_limit allows up to 10,000 rows, and
+    # an O(n^2) version measured in the seconds at that size. `left` advances monotonically
+    # because `times` is sorted ascending (assemble_tier1_vector's contract on `history`), so a
+    # single forward pass over both pointers suffices.
+    counts = np.empty(len(times), dtype="float64")
+    left = 0
+    for right, t in enumerate(times):
+        while times[left] <= t - window:
+            left += 1
+        counts[right] = right - left + 1
+
+    mean = float(counts.mean())
+    std = float(counts.std(ddof=1))
+    return mean, std
 
 
 def assemble_tier1_vector(
@@ -625,6 +698,20 @@ async def score_transaction(
         decision=decision,
     )
     top_features = tuple(explain(bundle.tier1, transaction, top_k=TOP_FEATURE_COUNT))
+    prior_velocity_mean, prior_velocity_std = _prior_velocity_baseline(history)
+    history_anomaly = HistoryAnomalyFeatures(
+        # FeatureVector's declared type also admits str, for categorical features -- these four
+        # are always numeric-or-absent at runtime (assemble_tier1_vector never stores a string
+        # under these names), so _as_float only ever narrows, never silently drops a real value.
+        amount_zscore_vs_own_history=_as_float(
+            transaction.features.get("amount_zscore_vs_own_history")
+        ),
+        velocity_count_1h=_as_float(transaction.features.get("velocity_count_1h")),
+        velocity_count_24h=_as_float(transaction.features.get("velocity_count_24h")),
+        velocity_count_7d=_as_float(transaction.features.get("velocity_count_7d")),
+        prior_velocity_count_1h_mean=prior_velocity_mean,
+        prior_velocity_count_1h_std=prior_velocity_std,
+    )
 
     outcome = ScoringOutcome(
         decision=decision,
@@ -633,6 +720,7 @@ async def score_transaction(
         tier3=tier3,
         cost=cost,
         top_features=top_features,
+        history_anomaly=history_anomaly,
         model_versions=dict(bundle.model_versions),
         feature_version=bundle.feature_version,
         degraded=degraded_reason is not None,

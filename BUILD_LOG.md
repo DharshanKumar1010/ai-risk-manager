@@ -1866,3 +1866,214 @@ handler, so FastAPI's default 422 echoes submitted values back for schema-level 
 - One BUILD_LOG figure from Phase 2 is now stale (recorded for reference)
 
 **Next:** Phase 9 (Razorpay webhook integration)
+
+## Phase 9 — Razorpay Webhook with Merchant Risk Context
+
+**What shipped:**
+- `POST /webhooks/razorpay/transaction` — `app/api/webhooks.py`, mounted unconditionally in
+  `main.py`. Verifies `X-Razorpay-Signature` (HMAC-SHA256 over the raw request body,
+  `app/core/webhook_security.py`) before parsing anything, scores via the same
+  `score_transaction`/`write_audit_record` `POST /score` uses, writes and commits the audit
+  row, then builds a `merchant_context` block and publishes to the live feed — same commit-
+  then-publish ordering as `POST /score`.
+- `app/core/merchant_context.py` — `compute_merchant_context`, reading only `audit_log` (this
+  account's last 100 decisions) and `accounts` (a lifetime baseline). No new query for the
+  amount/velocity anomaly flags: they are read off `ScoringOutcome.history_anomaly`
+  (`app/core/serving.py`'s new `HistoryAnomalyFeatures`), which is the same Tier-1 vector
+  `score_transaction` already assembled for the decision itself.
+- `razorpay_webhook_secret` in `config.py`, same placeholder-refusal and 32-byte floor as
+  `jwt_secret_key`. This is the *entire* authentication surface of the route — there is no
+  bearer token on it at all.
+
+**Design decisions, recorded because each reopens or bends a rule an earlier phase closed:**
+
+- **The response deliberately returns `risk_score`, `cost_estimate`, and `merchant_context`,
+  which is exactly what Phase 6/7's security review spent two rounds removing from every other
+  response on this service** (`app/api/schemas.py`'s module docstring, B2/B3 above). The
+  argument for why this one route is different: every other response is read by the account it
+  describes, authenticated by that account's own JWT — the probing party and the authorized
+  party are the same caller, which is what made the gate necessary. This route has no JWT path
+  at all; its only caller is whoever holds `razorpay_webhook_secret`. `TestWebhookAuthenticationIsHMACNotJWT`
+  in `test_api_security.py` asserts the precondition directly: a fully-scoped merchant JWT with
+  no signature still gets 401. `top_features` stays excluded even here — only the three fields
+  above were reasoned about.
+- **`fraud_rate_last_100` is a decision-proxy, not verified fraud.** `audit_log` carries no
+  ground-truth label, only the `allow`/`review`/`block` decision this service made. The field
+  is the fraction of an account's last 100 decisions that were `review` or `block`, named and
+  documented as exactly that on `MerchantRiskContext`.
+- **`baseline_fraud_rate` is a lifetime, offline aggregate**, not a live or point-in-time-safe
+  figure — `accounts.fraud_count / transaction_count`, built once over train+val+test combined
+  by the Phase 1 pipeline. `None` for any account that pipeline never saw, which is the expected
+  case for a real Razorpay merchant.
+- **The transaction-persistence gap is not fixed here, on purpose.** `POST /score` already does
+  not persist what it scores (Phase 7's known gap, above); this phase does not add the
+  `scored_transactions` ledger Phase 7's entry named as Phase 9's prerequisite. Consequence: a
+  merchant's live-webhook activity does not enter its own future `amount_zscore_vs_own_history`
+  or velocity history, and never appears in `GET /transactions`, until a future phase adds that
+  ledger. Chosen to keep this phase's scope to the webhook and its context block rather than a
+  second, larger persistence project.
+- **Redelivery is not deduplicated.** Razorpay's at-least-once retry semantics mean the same
+  payment event can arrive twice; each arrival scores independently and writes its own
+  `audit_log` row — `audit_log.py`'s own docstring already anticipated exactly this
+  ("a transaction may be scored more than once; each is its own row"). Idempotency (Phase 7's
+  other named prerequisite) is still open.
+- **`velocity_anomaly` is a genuine z-score, not a fixed count threshold** — computed in
+  `serving.py`'s `_prior_velocity_baseline` from the mean/std of the account's own trailing-1h
+  transaction count as measured at each of its prior transactions (the same `history` rows
+  `score_transaction` already fetched, no new query), consistent with how `amount_anomaly`'s
+  real z-score already works. It is not a Tier-1 model input and does not go through
+  `app.data.features` — it is a diagnostic figure for this response only.
+- **No `confidence` field.** The original design's example response paired `confidence: 0.87`
+  with `risk_score: 0.42` — not reproducible by any simple formula, and nothing this system
+  produces measures calibration or ensemble agreement distinctly from `risk_score` itself.
+  Considered and dropped rather than invented; `RazorpayWebhookResponse`'s docstring says so.
+- **`account_id` arrives via `payload.payment.entity.notes["riskiq_account_id"]`** — a new
+  integration convention this project defines, not one Razorpay provides. Razorpay has no field
+  that natively means "the RiskIQ account this transaction's history belongs to"; a merchant's
+  checkout integration must stamp it into Razorpay's arbitrary-metadata `notes` field at
+  order/payment creation. Undocumented anywhere outside this entry and the route's own
+  docstring until a real integration guide exists.
+- **The `raw_columns` mapping from Razorpay's real payment fields to IEEE-CIS's synthetic raw
+  columns is thin** (`app/api/webhooks.py`'s `_extract_raw_columns`) — `method`→`ProductCD`,
+  `card.network`→`card4`, `card.type`→`card6`, and nothing else. Most of IEEE-CIS's ~90 raw
+  columns (`C1`-`C14`, `D1`-`D15`, the identity block) have no counterpart in a real processor's
+  payload. Tier-1 already tolerates missing raw columns (76% of IEEE-CIS rows carry no identity
+  record at all), so this degrades gracefully rather than erroring — but it is a genuine
+  limitation of wiring a Kaggle-trained model to a live processor, not something this phase
+  fixes, and worth being honest about in the demo.
+- **`RazorpayPaymentEntity`/`RazorpayWebhookEnvelope` use `extra="ignore"`, not `"forbid"`** —
+  a second, request-side exception to security-checklist item 4.1 ("Strict Pydantic schemas
+  (`extra="forbid"`) on every request body"), alongside the response-disclosure exception above.
+  Raised directly during code review rather than assumed acceptable, and kept on the reasoning
+  that item 4.1 exists to catch a typo in a field name *this project defines*; it does not
+  transfer to validating a subset of a third-party payload this service does not control.
+  Razorpay's real payment entity carries on the order of 25 fields, of which this service reads
+  seven — `extra="forbid"` here would 422 on essentially every real webhook Razorpay sends,
+  which is a functional failure of the integration, not a caught mistake. See
+  `app/api/schemas.py`'s module docstring for the full argument.
+
+**Security review findings & fixes:**
+- **BLOCKING, found and fixed: `notes["riskiq_account_id"]` had no ownership verification at
+  all.** The route's own docstring originally argued the value was "trustworthy because it came
+  from inside the HMAC-covered body, exactly as a JWT claim is trustworthy because it came from
+  inside a signature-checked token." Security review found that analogy false: Razorpay's
+  signature proves the bytes came from Razorpay, not that the account_id claim inside them is
+  honest — Razorpay never interprets or validates `notes`, which is opaque metadata whoever
+  creates the payment controls (this project's own checkout integration, or, if that
+  integration passes client input through unsanitized, a malicious customer of it). Without a
+  check, that unverified claim could attribute a permanent, immutable `audit_log` row to an
+  account it does not belong to, and unlock that account's `merchant_context`/`risk_score`/
+  `cost_estimate` in the response — a cross-account read/write with no ownership binding,
+  exactly the mistake `POST /score`'s `require_account_ownership` exists to prevent on the JWT
+  path, reintroduced here because this route has no JWT to cross-check against.
+  **Fix:** `app/api/webhooks.py`'s `_require_known_account`, called before anything is scored
+  or written, refuses any `account_id` not already present in `accounts` (a bounded,
+  attacker-uninfluenceable set populated only by the offline Phase 1 pipeline, never by live
+  traffic) with a 404. **This is an interim mitigation, not a real fix** — it narrows "attribute
+  a decision to any string an attacker invents" down to "attribute a decision to an account_id
+  that already exists," but does not stop an attacker who already knows or guesses a real,
+  existing account_id from targeting that specific one. Closing that fully requires a real
+  merchant/customer identity binding this project does not have; accepted as a bounded,
+  documented residual risk for this phase, not a silent gap. The flawed docstring analogy that
+  originally justified the unverified trust was corrected in place rather than merely removed,
+  so the mistake is legible to the next person who touches this route.
+- **HARDENING, found and fixed: the read path routed through `get_analyst_session`, which holds
+  a dormant `SET LOCAL ROLE riskiq_analyst` branch.** Unreachable only because the webhook's
+  principal always carries `scopes=()` — an invariant nothing enforced. `merchant_context` never
+  needs estate-wide access (only this account's own decision history and baseline), so
+  `webhook_read_session` now routes through `get_scoped_session` instead, which has no such
+  branch to accidentally reach. New `test_webhook_session.py` drives both webhook session
+  dependencies directly (mirroring `test_db_session.py`'s `RecordingSession` approach) to assert
+  neither ever issues `SET LOCAL ROLE` — the property that was previously only true by accident.
+- **HARDENING, found and fixed: `_prior_velocity_baseline` was O(n²)** over the account history
+  window (up to `account_history_limit`, configurable to 10,000 rows), running unconditionally
+  on every `score_transaction` call — including `POST /score`, which never reads its output.
+  Rewritten as an O(n) two-pointer sliding window over the same already-sorted `history`.
+- **HARDENING, found and fixed: an out-of-range `created_at` crashed with an unhandled
+  `OverflowError`** (a 500) instead of the intended 422 — the one field in
+  `RazorpayPaymentEntity` without a bound, unlike `amount`. Bounded `ge=0, le=4_102_444_800`
+  (2100-01-01), mirroring `amount`'s existing pattern.
+- **HARDENING, found and fixed: `method`/`card`/`notes` had no length bounds**, unlike every
+  raw-column value on the `/score` path (`ScoreRequest.bound_raw_values`). Added a matching
+  validator; `card` is now `dict[str, str]` rather than `dict[str, Any]`. The extracted
+  `account_id` itself is now bounded to 128 characters (matching `ScoreRequest.account_id` and
+  `audit_log.account_id`'s column width), refused as `missing_riskiq_account_id` rather than
+  reaching `write_audit_record` and raising an unhandled `StringDataRightTruncation`.
+- **Raised and resolved: `extra="ignore"` vs. security-checklist item 4.1.** Assessed
+  independently from a security standpoint (not only the functional one raised during planning)
+  and found sound — see the design-decision entry above and `app/api/schemas.py`'s module
+  docstring for the full argument. No attack surface: the modelled fields keep independent
+  bounds, nothing iterates the ignored extras, and `_extract_raw_columns` reads three hardcoded
+  keys, never anything dynamic from the entity.
+- Confirmed clean: HMAC uses `hmac.compare_digest` (not `==`) over the exact raw bytes before
+  any parsing; the `razorpay_webhook_secret` placeholder-refusal validator genuinely blocks a
+  staging/production boot; `enforce_webhook_rate_limit` fails closed (503) exactly like every
+  other endpoint; every new query is ORM-only with bound parameters, no string interpolation;
+  no secret, PII, or internal detail is echoed in any error response.
+- **Not independently verified this phase:** `git log -p` / `trufflehog` over full repository
+  history (security-checklist item 1.4) — no shell was available to the reviewing agent. Carried
+  forward from Phase 7's known gaps, unchanged by this phase.
+
+**What `merchant_context` does NOT measure**, per the same honesty requirement CLAUDE.md states
+for a model's own README section — this block ships no model, but the standard applies equally
+to a new user-facing risk figure. Found by ml-evaluator review of this phase, closed by
+documentation and one added field (`fraud_rate_basis`), not by re-running anything:
+- **`fraud_rate_last_100` and `baseline_fraud_rate` are not commensurable**, despite sitting in
+  the same response object with adjacent, plausible-looking values. One is a same-day decision
+  proxy with no ground-truth label; the other is a lifetime, offline, label-derived aggregate
+  that can include transactions chronologically later than the one being scored. Reading them as
+  "recent trend vs. historical baseline" overstates what either one is. `fraud_rate_basis` now
+  carries this in the payload itself, not only in the schema's documentation.
+- **`amount_anomaly`/`velocity_anomaly` have no measured precision or recall.** The 2σ cut is a
+  common, unremarkable default, deliberately never tuned against this project's data — but it
+  was also never *evaluated* against train/val, so its false-positive rate at that threshold is
+  unknown. `velocity_zscore_1h` in particular is a diagnostic computed only for this response;
+  unlike `amount_zscore_vs_own_history`, it is not a Tier-1 model input and did not contribute
+  to `risk_score`.
+- **`fraud_rate_last_100` is unstable at low `decisions_considered`.** A merchant's first-ever
+  transaction, if blocked, reads as `fraud_rate_last_100 == 1.0` — mechanically correct, easy to
+  over-read. `decisions_considered` is returned specifically so a consumer can discount a small
+  denominator, but nothing forces that discounting.
+- **Redelivery inflates `fraud_rate_last_100`.** The no-deduplication decision above means a
+  payment event Razorpay retries writes a second `audit_log` row, which counts twice in the
+  100-window numerator if it was flagged.
+- **`decision_rationale` names flags, it does not attribute the decision to them.** It is not a
+  SHAP-style explanation — that remains `top_features`, withheld from every response including
+  this one — and in particular `velocity_anomaly` firing does not mean velocity contributed to
+  `risk_score`, since it is not a signal the model saw.
+
+**Test suite:** new `test_webhook_razorpay.py` (signature verification, payload validation,
+response disclosure — both what is now authorized and that `top_features` still is not —
+unknown-account gate, audit write, redelivery, rate limiting, `merchant_context` computation
+against a dedicated stub session), new `test_webhook_session.py` (RLS wiring: neither webhook
+session dependency ever issues `SET LOCAL ROLE`), `test_api_security.py`'s
+`TestWebhookAuthenticationIsHMACNotJWT`, and `test_serving.py`'s
+`TestHistoryAnomalyOnScoringOutcome`.
+
+**Known gaps (not blocking, carried forward explicitly):**
+- No `scored_transactions` ledger — see the persistence-gap decision above. Still Phase 7's
+  named prerequisite, still open.
+- No idempotency on repeated `(account_id, transaction_id)` — still open, for both `POST /score`
+  and this webhook.
+- **No real merchant/customer identity binding for `notes["riskiq_account_id"]`** — see the
+  BLOCKING security finding above. `_require_known_account` narrows but does not close the
+  exposure; an attacker who already knows or guesses a real, existing `account_id` can still
+  target it specifically. Must be closed with a verified identity binding before this webhook
+  is pointed at any deployment where the checkout integration cannot be trusted to sanitize
+  what reaches `notes`, or before it is exposed to more than one mutually-untrusting merchant.
+- **Deployment topology assumption, stated explicitly per security review:** a single
+  process-wide `razorpay_webhook_secret` implies this deployment serves one Razorpay account
+  whose webhook configuration this project controls. If instead each of several merchants
+  configures their own webhook against a shared secret, every one of them holds the full
+  authentication surface of this route, and the response-disclosure exception's premise (no
+  JWT-authenticated party can reach this route) no longer holds independently of the identity-
+  binding gap above.
+- No real end-to-end test against Razorpay's actual test-mode APIs (`notes["riskiq_account_id"]`
+  requires a checkout-side integration this project does not have); the enhancement pass
+  (a synthetic seeded-fraud-rate demo script) was not attempted this phase.
+- The `raw_columns` mapping is thin — see the design-decision entry above.
+- `git log -p` / `trufflehog` over full repository history was not independently re-verified
+  this phase (security-checklist item 1.4) — no shell was available to the reviewing agent.
+  Carried forward from Phase 7's known gaps, unchanged.
+
+**Next:** Phase 10 (testing, CI, deployment).

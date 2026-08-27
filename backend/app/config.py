@@ -24,6 +24,12 @@ MIN_JWT_SECRET_BYTES = 32
 PLACEHOLDER_ENTITY_ANONYMIZATION_KEY = "dev-only-placeholder-change-me-before-deploy"
 MIN_ENTITY_ANONYMIZATION_KEY_BYTES = 32
 
+#: Same placeholder-refusal pattern again, for the key that is the *entire* authentication
+#: surface of ``POST /webhooks/razorpay/transaction`` -- that route carries no bearer token at
+#: all. See ``razorpay_webhook_secret``'s own description.
+PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET = "dev-only-placeholder-change-me-before-deploy"
+MIN_RAZORPAY_WEBHOOK_SECRET_BYTES = 32
+
 # Repo-root ``data/`` on a host checkout (backend/app/config.py -> up three -> repo root),
 # and ``/data`` inside the backend container, where ``/srv`` is the backend directory.
 # docker-compose sets DATA_DIR explicitly as well, so the deployment does not depend on
@@ -115,6 +121,16 @@ class Settings(BaseSettings):
         "candidates. This key is what makes the mapping non-reversible without it. Used only "
         "at training/export time (app.models.train_tier3.build_served_model) -- never written "
         "into a Tier3Model artifact, models/registry.json, or any API response.",
+    )
+
+    razorpay_webhook_secret: str = Field(
+        default=PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET,
+        min_length=MIN_RAZORPAY_WEBHOOK_SECRET_BYTES,
+        description="HMAC-SHA256 key configured in the Razorpay dashboard's webhook settings, "
+        "verified against X-Razorpay-Signature by app.core.webhook_security. The *only* "
+        "authentication POST /webhooks/razorpay/transaction has -- there is no bearer token on "
+        "that route at all. Same placeholder-refusal and length floor as jwt_secret_key, for "
+        "the same RFC 7518 section 3.2 reasoning.",
     )
 
     jwt_ws_audience: str = Field(
@@ -277,6 +293,12 @@ class Settings(BaseSettings):
                 f"entity_anonymization_key is still the placeholder in "
                 f"environment={self.environment!r}. Set ENTITY_ANONYMIZATION_KEY to a real "
                 "value before training/exporting Tier-3."
+            )
+        if deployed and self.razorpay_webhook_secret == PLACEHOLDER_RAZORPAY_WEBHOOK_SECRET:
+            raise ValueError(
+                f"razorpay_webhook_secret is still the placeholder in "
+                f"environment={self.environment!r}. Set RAZORPAY_WEBHOOK_SECRET to the value "
+                "configured in the Razorpay dashboard's webhook settings."
             )
         return self
 

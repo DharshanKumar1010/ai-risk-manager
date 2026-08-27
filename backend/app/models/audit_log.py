@@ -125,8 +125,11 @@ class AuditLog(Base):
     cost_estimate: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
-        doc="DecisionCost.to_audit_dict(). Server-side only: the sign of its expected saving "
-        "is the decision boundary, so no field of it may reach a response body.",
+        doc="DecisionCost.to_audit_dict(). Server-side only for any response read by a party "
+        "authenticated as the transacting merchant: the sign of its expected saving is the "
+        "decision boundary. One exception -- Phase 9's Razorpay webhook, whose caller is "
+        "authenticated by a shared HMAC secret, not a merchant JWT. See "
+        "app/api/schemas.py's module docstring.",
     )
 
     degraded: Mapped[bool] = mapped_column(

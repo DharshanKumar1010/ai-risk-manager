@@ -102,6 +102,31 @@ def test_a_real_entity_anonymization_key_boots_fine_when_deployed() -> None:
         environment="production",  # type: ignore[arg-type]
         jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
         entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+        razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+    )
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_razorpay_webhook_secret_placeholder_refuses_to_boot_when_deployed(
+    environment: str,
+) -> None:
+    """Phase 9: a deployed service must not accept X-Razorpay-Signature against the well-known
+    placeholder key, which anyone who has read this repo could forge a valid signature with."""
+    with pytest.raises(ValueError, match="razorpay_webhook_secret"):
+        Settings(
+            environment=environment,  # type: ignore[arg-type]
+            jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
+            entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+        )
+
+
+def test_a_real_razorpay_webhook_secret_boots_fine_when_deployed() -> None:
+    """Guard on the guard: the validator must not refuse every deployed boot outright."""
+    Settings(
+        environment="production",
+        jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
+        entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+        razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
     )
 
 

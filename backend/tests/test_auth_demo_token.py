@@ -26,6 +26,7 @@ class TestRouterMounting:
             environment=environment,  # type: ignore[arg-type]
             jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
             entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
         )
         app = create_app(settings)
         app.state.rate_limiter = PermissiveLimiter()
@@ -40,6 +41,7 @@ class TestRouterMounting:
             environment=environment,  # type: ignore[arg-type]
             jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
             entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+            razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
         )
         app = create_app(settings)
         app.state.rate_limiter = PermissiveLimiter()

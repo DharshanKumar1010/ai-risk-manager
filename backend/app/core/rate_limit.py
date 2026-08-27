@@ -168,6 +168,20 @@ async def enforce_rate_limit(
     await limiter.check(_identity(request))
 
 
+async def enforce_webhook_rate_limit(
+    request: Request,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> None:
+    """The same fail-closed limiter as :func:`enforce_rate_limit`, for a route with no bearer
+    token to authenticate first -- ``POST /webhooks/razorpay/transaction`` has no
+    :class:`~app.core.security.Principal` dependency at all, so there is nothing to key the
+    budget on but the caller's address. :func:`_identity` already falls back to
+    ``ip:{client.host}`` whenever ``request.state`` carries no principal, which is always true
+    on this route, so no new key format is needed here.
+    """
+    await limiter.check(_identity(request))
+
+
 def build_rate_limiter(settings: Settings | None = None) -> RateLimiter:
     """Construct a limiter from settings. Used by the application factory."""
     return RateLimiter(settings or get_settings())

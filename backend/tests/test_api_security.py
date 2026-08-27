@@ -12,6 +12,7 @@ that fails until the new route is added to it — so ``test_every_route_is_cover
 sweep's own completeness against the live application.
 """
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -32,7 +33,13 @@ from app.core.security import (
     SCOPE_TRANSACTIONS_READ,
     create_access_token,
 )
-from tests.conftest import FakeSession, auth_header, score_payload
+from tests.conftest import (
+    FakeSession,
+    auth_header,
+    razorpay_webhook_payload,
+    score_payload,
+    signed_webhook_body,
+)
 
 #: (method, path, body, required scopes) for every route that must refuse an anonymous caller.
 PROTECTED_ROUTES: tuple[tuple[str, str, dict[str, Any] | None, tuple[str, ...]], ...] = (
@@ -50,6 +57,15 @@ PUBLIC_PATHS = {
     "/docs": "schema UI",
     "/docs/oauth2-redirect": "schema UI",
     "/redoc": "schema UI",
+}
+
+#: Routes authenticated by something other than a JWT bearer token, with the reason. Excluded
+#: from PROTECTED_ROUTES' bearer sweep for that reason, not because they are unauthenticated --
+#: TestWebhookAuthenticationIsHMACNotJWT covers this route's own authentication directly.
+WEBHOOK_ROUTES = {
+    "/webhooks/razorpay/transaction": "authenticated by X-Razorpay-Signature, an HMAC over the "
+    "raw body verified in app.core.webhook_security -- there is no bearer token on this route "
+    "at all, so the JWT-bearer sweep below does not apply to it.",
 }
 
 
@@ -247,10 +263,69 @@ class TestAuthenticationIsRequired:
         for route in app.routes:
             for candidate in getattr(route, "routes", [route]):
                 path = getattr(candidate, "path", None)
-                if path and path not in PUBLIC_PATHS:
+                if path and path not in PUBLIC_PATHS and path not in WEBHOOK_ROUTES:
                     live.add(path)
 
         assert live <= covered, f"routes with no authorization test: {sorted(live - covered)}"
+
+
+class TestWebhookAuthenticationIsHMACNotJWT:
+    """``POST /webhooks/razorpay/transaction`` is deliberately outside PROTECTED_ROUTES' bearer
+    sweep -- see WEBHOOK_ROUTES above -- so its own authentication is asserted here instead.
+    This is also where the Phase 9 disclosure exception's precondition is checked directly: the
+    response is allowed to carry risk_score/cost_estimate/merchant_context only because no
+    JWT-authenticated path reaches this route at all.
+    """
+
+    def test_a_valid_merchant_jwt_with_no_signature_still_gets_401(
+        self, client: TestClient, settings: Settings
+    ) -> None:
+        """The specific claim the disclosure exception rests on: holding score:write, or any
+        other scope, buys a caller nothing here without the HMAC signature."""
+        payload = razorpay_webhook_payload()
+        response = client.post(
+            "/webhooks/razorpay/transaction",
+            content=json.dumps(payload).encode("utf-8"),
+            headers=auth_header(settings, account_id="acct-1", scopes=(SCOPE_SCORE,)),
+        )
+        assert response.status_code == 401
+
+    def test_a_missing_signature_is_refused(self, client: TestClient) -> None:
+        response = client.post(
+            "/webhooks/razorpay/transaction",
+            content=json.dumps(razorpay_webhook_payload()).encode("utf-8"),
+        )
+        assert response.status_code == 401
+
+    def test_a_wrong_signature_is_refused(self, client: TestClient, settings: Settings) -> None:
+        payload = razorpay_webhook_payload()
+        body, _headers = signed_webhook_body(settings, payload)
+        response = client.post(
+            "/webhooks/razorpay/transaction",
+            content=body,
+            headers={"X-Razorpay-Signature": "0" * 64},
+        )
+        assert response.status_code == 401
+
+    def test_a_tampered_body_is_refused(self, client: TestClient, settings: Settings) -> None:
+        payload = razorpay_webhook_payload()
+        body, headers = signed_webhook_body(settings, payload)
+        response = client.post(
+            "/webhooks/razorpay/transaction", content=body + b" ", headers=headers
+        )
+        assert response.status_code == 401
+
+    def test_an_unsigned_caller_never_sees_any_of_the_authorized_fields(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/webhooks/razorpay/transaction",
+            content=json.dumps(razorpay_webhook_payload()).encode("utf-8"),
+        )
+        assert response.status_code == 401
+        body = response.text.lower()
+        for field in ("risk_score", "cost_estimate", "merchant_context", "expected_cost"):
+            assert field not in body
 
 
 class TestScopesAreEnforcedServerSide:

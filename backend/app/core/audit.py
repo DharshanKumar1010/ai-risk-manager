@@ -17,6 +17,10 @@ impossible: a decision in the world with no record of how it was reached.
 **The record carries strictly more than the response does.** ``top_features`` and
 ``cost_estimate`` are stored here and never served to the transacting party; both are evasion
 oracles, and the constraint travels with the fields rather than living in a reviewer's memory.
+Phase 9's Razorpay webhook is the one exception, for ``cost_estimate`` only, and only because
+its caller is authenticated by a shared HMAC secret rather than a merchant's own JWT -- there is
+no "transacting party" reachable through that route the way there is through every other one.
+See ``app/api/schemas.py``'s module docstring and ``BUILD_LOG.md``'s Phase 9 entry.
 """
 
 from datetime import datetime
@@ -77,7 +81,10 @@ class AuditRecord(BaseModel):
         default=None,
         description="``DecisionCost.to_audit_dict()`` for this decision. Strictly worse than "
         "top_features as an oracle -- the sign of its expected saving is the decision "
-        "boundary itself -- so no field of it may reach a response body.",
+        "boundary itself -- so no field of it may reach a response body served to a party "
+        "authenticated as the transacting merchant. The one exception is Phase 9's Razorpay "
+        "webhook response, whose caller is authenticated by a shared HMAC secret rather than a "
+        "merchant JWT -- see app/api/schemas.py's module docstring for the full argument.",
     )
 
     degraded: bool = Field(

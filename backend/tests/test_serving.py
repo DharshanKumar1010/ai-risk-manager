@@ -114,6 +114,80 @@ class TestVectorShape:
         assert result.model_version == bundle.tier1.model_id
 
 
+class TestHistoryAnomalyOnScoringOutcome:
+    """Phase 9: ScoringOutcome.history_anomaly must read off the same assembled vector
+    assemble_tier1_vector produces, not a second computation -- see serving.py's
+    HistoryAnomalyFeatures docstring for why."""
+
+    async def test_history_anomaly_matches_the_assembled_vectors_own_values(
+        self, bundle: ModelBundle
+    ) -> None:
+        from app.core.serving import score_transaction
+        from tests.conftest import FakeSession
+
+        history_rows = _history(6)
+        # read_account_history's real query orders newest-first, then reverses the result to
+        # ascending -- FakeSession does not sort, so the rows handed to it must already be in
+        # the descending order a real DB read would return, for the reversal to land correctly.
+        session = FakeSession(
+            rows=[
+                (row.event_time, row.amount, row.device_info, row.addr1)
+                for row in reversed(history_rows)
+            ]
+        )
+        settings = Settings(environment="ci", jwt_secret_key=TEST_SIGNING_KEY)
+
+        outcome, _record = await score_transaction(
+            session,
+            bundle,
+            settings,
+            transaction_id="T-1",
+            account_id="acct-1",
+            event_time=BASE_TIME,
+            amount=Decimal("150.00"),
+            raw_columns=dict(RAW),
+        )
+
+        vector = _assemble(bundle, history_rows)
+        assert outcome.history_anomaly.amount_zscore_vs_own_history == vector.get(
+            "amount_zscore_vs_own_history"
+        )
+        assert outcome.history_anomaly.velocity_count_1h == vector.get("velocity_count_1h")
+        assert outcome.history_anomaly.velocity_count_24h == vector.get("velocity_count_24h")
+        assert outcome.history_anomaly.velocity_count_7d == vector.get("velocity_count_7d")
+
+    async def test_prior_velocity_baseline_is_none_below_the_minimum_prior_count(
+        self, bundle: ModelBundle
+    ) -> None:
+        """ZSCORE_MIN_PRIOR prior observations are required, matching the amount z-score's own
+        floor -- one prior transaction is not enough to say what "usual" looks like."""
+        from app.core.serving import score_transaction
+        from tests.conftest import FakeSession
+
+        history_rows = _history(1)
+        session = FakeSession(
+            rows=[
+                (row.event_time, row.amount, row.device_info, row.addr1)
+                for row in reversed(history_rows)
+            ]
+        )
+        settings = Settings(environment="ci", jwt_secret_key=TEST_SIGNING_KEY)
+
+        outcome, _record = await score_transaction(
+            session,
+            bundle,
+            settings,
+            transaction_id="T-1",
+            account_id="acct-1",
+            event_time=BASE_TIME,
+            amount=Decimal("150.00"),
+            raw_columns=dict(RAW),
+        )
+
+        assert outcome.history_anomaly.prior_velocity_count_1h_mean is None
+        assert outcome.history_anomaly.prior_velocity_count_1h_std is None
+
+
 class TestHistoryDerivedFeatures:
     """Checked against hand arithmetic, not against the current output."""
 

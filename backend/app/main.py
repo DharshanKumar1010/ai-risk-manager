@@ -30,7 +30,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import audit, auth, feed, health, rings, score, transactions
+from app.api import audit, auth, feed, health, rings, score, transactions, webhooks
 from app.config import Settings, get_settings
 from app.core.feed import FeedBroadcaster
 from app.core.rate_limit import build_rate_limiter
@@ -121,6 +121,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(rings.router)
     application.include_router(feed.auth_router)
     application.include_router(feed.feed_router)
+    # Mounted unconditionally, unlike auth.router below -- Razorpay must be able to reach this
+    # in every deployed environment, not only local/ci.
+    application.include_router(webhooks.router)
 
     if cfg.environment in ("local", "ci"):
         # Registered conditionally, not gated inside the handler -- see auth.py's module

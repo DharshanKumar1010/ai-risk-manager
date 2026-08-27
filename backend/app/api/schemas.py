@@ -1,6 +1,7 @@
 """Request and response schemas for the HTTP surface.
 
-Every model here is ``extra="forbid"``. That is security-checklist item 4.1, and on this
+Every model here is ``extra="forbid"``, with one named exception (``RazorpayPaymentEntity`` /
+``RazorpayWebhookEnvelope``, see below). That is security-checklist item 4.1, and on this
 service it does real work rather than being hygiene: a scoring request carries ~90 optional
 raw columns, so a typo in a field name would otherwise be silently dropped and the transaction
 scored against a vector missing the feature the caller meant to send.
@@ -49,11 +50,49 @@ the analyst-only explain route.
 
 :func:`risk_band` itself is kept because the dashboard colours a feed by it, but it is computed
 from a probability that only an analyst can obtain.
+
+**One deliberate exception, added in Phase 9.** ``RazorpayWebhookResponse`` carries
+``risk_score``, ``cost_estimate`` (every field of ``DecisionCost``) and ``merchant_context``,
+which together are exactly the disclosure this docstring spent three paragraphs closing. The
+reason it is safe here and nowhere else: every other response on this service is read by the
+account it describes, authenticated by that account's own JWT -- the probing party and the
+authorized party are the same caller, which is what made the gate necessary in the first place.
+``POST /webhooks/razorpay/transaction`` has no JWT at all; its only caller is whoever holds
+``settings.razorpay_webhook_secret`` (Razorpay, in a real deployment), verified over the raw
+request body before anything is parsed -- see ``app/core/webhook_security.py``. A merchant has
+no path to *authenticate as* this route's caller, so a merchant cannot mint its own signed
+request and read an arbitrary response. ``top_features`` stays excluded even here: only the
+three fields above were reasoned about and authorized, and attribution is a different, worse
+oracle (see the ``top_features`` paragraph above).
+
+**This exception's precondition depends on a second fix, found in the same security review.**
+The account whose ``merchant_context`` gets disclosed is read from
+``notes["riskiq_account_id"]`` -- signed by Razorpay's channel, but not a claim Razorpay itself
+verifies, so a caller who can shape a payment's ``notes`` (this project's own checkout
+integration, or a customer of it if that integration is not careful) could otherwise name an
+*arbitrary* account and have this route disclose that account's data, independent of who holds
+the webhook secret. ``app/api/webhooks.py``'s ``_require_known_account`` narrows this to
+accounts already present in ``accounts`` -- see that function's docstring for exactly what it
+does and does not close. Full rationale recorded in ``BUILD_LOG.md``'s Phase 9 entry.
+
+**A second, request-side exception, also from Phase 9.** ``RazorpayPaymentEntity`` and
+``RazorpayWebhookEnvelope`` -- the schemas ``app/api/webhooks.py`` validates the raw webhook
+body against -- declare ``extra="ignore"``, not ``"forbid"``, which on every other schema in
+this file is security-checklist item 4.1 and is not optional. The reasoning above for item 4.1
+does not transfer here: it exists to catch a typo in a field name *this project defines*, so a
+caller's mistake fails loudly instead of scoring against a vector silently missing the feature
+they meant to send. Razorpay's real payment entity carries on the order of 25 fields --
+``status``, ``order_id``, ``fee``, ``tax``, ``acquirer_data``, ``error_code``, and more -- of
+which this service reads seven. The shape is Razorpay's, not this project's to constrain, and
+``extra="forbid"`` on it would 422 on essentially every real webhook Razorpay sends, which is a
+functional failure, not a caught mistake. This was raised directly against security-checklist
+item 4.1 during Phase 9's review and kept as a named exception rather than silently deviating
+from it -- see ``BUILD_LOG.md``'s Phase 9 entry for the record of that decision.
 """
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -435,3 +474,205 @@ class WsTicketResponse(BaseModel):
 
     ticket: str
     expires_in: int = Field(description="Seconds until the ticket expires.")
+
+
+# --- Razorpay webhook (Phase 9) -------------------------------------------------------------
+#
+# See this module's docstring for the disclosure exception these schemas carry.
+
+
+class RazorpayPaymentEntity(BaseModel):
+    """The subset of Razorpay's payment entity this service reads.
+
+    ``extra="ignore"``, not ``"forbid"`` -- unlike every request schema elsewhere in this
+    file, this shape is Razorpay's, not ours to constrain. A field this service does not read
+    is not a caller-chosen input reaching a model; it is simply not read. Validated only after
+    :func:`app.core.webhook_security.verify_razorpay_signature` has already checked the raw
+    body, so a malformed payload cannot be crafted to probe parsing behaviour without first
+    forging a valid signature.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(min_length=1, max_length=128)
+    amount: int = Field(ge=0, le=int(MAX_TRANSACTION_AMOUNT) * 100, description="Smallest "
+        "currency unit (paise for INR).")
+    currency: str = Field(max_length=8)
+    method: str | None = Field(default=None, max_length=MAX_RAW_VALUE_LENGTH)
+    card: dict[str, str] | None = Field(
+        default=None,
+        description="Only the two keys _extract_raw_columns reads (network, type) matter; "
+        "typed dict[str, str] with a value-length bound (not dict[str, Any]) so a caller cannot "
+        "reach the scorer with an arbitrarily large or nested object under this key.",
+    )
+    notes: dict[str, str] = Field(
+        default_factory=dict,
+        description="Razorpay's arbitrary merchant-supplied metadata. This project's Phase 9 "
+        "integration convention reads the RiskIQ account this transaction's history belongs "
+        "to from notes['riskiq_account_id'] -- Razorpay has no field that means this natively, "
+        "so a merchant's checkout integration must stamp it here at order/payment creation.",
+    )
+
+    @field_validator("card", "notes")
+    @classmethod
+    def bound_string_map_values(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        """Bound key/value length on the two caller-shaped string maps this schema accepts,
+        mirroring ScoreRequest.bound_raw_values -- a webhook payload is caller-influenced data
+        reaching this service same as a /score request body is, even though Razorpay's channel
+        signs it."""
+        if value is None:
+            return value
+        for key, entry in value.items():
+            if len(key) > MAX_RAW_VALUE_LENGTH or len(entry) > MAX_RAW_VALUE_LENGTH:
+                raise ValueError("card/notes entries must be shorter than 256 characters")
+        return value
+    created_at: int = Field(
+        ge=0,
+        le=4_102_444_800,  # 2100-01-01T00:00:00Z
+        description="Unix epoch seconds. Bounded, like `amount` above, so an absurd or "
+        "corrupted value fails validation here rather than raising OverflowError out of "
+        "datetime.fromtimestamp in app/api/webhooks.py -- that call is not itself wrapped in "
+        "the try/except around the two model_validate* calls, so an unbounded value would "
+        "reach it as an unhandled 500 instead of the intended 422.",
+    )
+
+
+class RazorpayWebhookEnvelope(BaseModel):
+    """The outer shape Razorpay posts. ``payload`` is read narrowly by ``app/api/webhooks.py``,
+    not modelled in full -- Razorpay's envelope carries more than this service uses."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    event: Literal["payment.authorized", "payment.captured", "payment.failed"]
+    payload: dict[str, Any]
+
+
+class DecisionCostBlock(BaseModel):
+    """``DecisionCost`` mirrored in full for the response body -- the one deliberate exception
+    to this file's disclosure gate. See the module docstring and ``BUILD_LOG.md``'s Phase 9
+    entry for why it is safe on this one route."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decision: Decision
+    expected_cost: float
+    cost_if_blocked: float
+    cost_if_allowed: float
+    expected_saving_from_blocking: float
+    fraud_probability: float = Field(ge=0.0, le=1.0)
+    amount: float
+    assumptions: list[str]
+
+
+class MerchantRiskContext(BaseModel):
+    """How this transaction's decision fits this merchant's own history.
+
+    See ``BUILD_LOG.md``'s Phase 9 entry, "what merchant_context does not measure", for the
+    caveats that apply to this block as a whole -- none of these figures are validated against
+    a held-out split, and ``fraud_rate_last_100``/``baseline_fraud_rate`` are drawn from
+    differently-scoped, non-commensurable populations despite sitting in the same object.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decisions_considered: int = Field(
+        ge=0,
+        le=100,
+        description="How many of this account's audit_log rows fraud_rate_last_100 was "
+        "computed over. Below 100 for a merchant with fewer than 100 recorded decisions. "
+        "merchant_context is read after the current decision's audit row commits, so that "
+        "decision is included in this count and in fraud_rate_last_100 -- at decisions_"
+        "considered == 1, a single blocked transaction reads as fraud_rate_last_100 == 1.0.",
+    )
+    fraud_rate_last_100: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="NOT a verified fraud rate -- see fraud_rate_basis, carried alongside it in "
+        "this same object rather than left to documentation a JSON consumer will not read. "
+        "audit_log carries no ground-truth label, only the decision this service made: this is "
+        "the fraction of decisions_considered whose decision was 'review' or 'block'. Unstable "
+        "at low decisions_considered (see that field), and inflated by an undeduplicated "
+        "redelivered webhook event, which writes a second audit_log row for the same payment.",
+    )
+    fraud_rate_basis: str = Field(
+        description="Fixed value 'decision_proxy_no_ground_truth_label', identifying "
+        "fraud_rate_last_100 as a decision-proxy in the response body itself -- not only in "
+        "this schema's documentation, which a caller reading raw JSON never sees.",
+    )
+    baseline_fraud_rate: float | None = Field(
+        default=None,
+        description="accounts.fraud_count / accounts.transaction_count for this account_id -- "
+        "a lifetime, offline aggregate over train+val+test combined, built once by the Phase 1 "
+        "pipeline. Not point-in-time-safe: for a demo account, this can include transactions "
+        "chronologically later than the one currently being scored, so a live decision may be "
+        "compared against a baseline that has, in effect, seen its own future. Not a model "
+        "input -- this is a display-only figure, read by no training or scoring path -- but the "
+        "comparison it invites against fraud_rate_last_100 should be read with that in mind. "
+        "None when this account_id was never seen by that pipeline, the expected case for a "
+        "real Razorpay merchant. Also scoped to accounts.source_dataset, unlike "
+        "fraud_rate_last_100 (audit_log carries no source_dataset column) -- the two figures "
+        "are not necessarily drawn from the same population even where both are present.",
+    )
+    baseline_transaction_count: int | None = Field(
+        default=None,
+        description="accounts.transaction_count backing baseline_fraud_rate. None with it.",
+    )
+    amount_zscore_vs_own_history: float | None = Field(
+        default=None,
+        description="From HistoryAnomalyFeatures. None when the account has fewer than "
+        "ZSCORE_MIN_PRIOR prior transactions, or when Tier-1's fitted spec did not select this "
+        "column as a model feature for the serving corpus. Unlike velocity_zscore_1h below, "
+        "this one *is* a Tier-1 model input -- it contributed to risk_score.",
+    )
+    amount_anomaly: bool = Field(
+        description="abs(amount_zscore_vs_own_history) > 2. A fixed, untuned threshold -- not "
+        "evaluated for precision or recall against any held-out split.",
+    )
+    velocity_zscore_1h: float | None = Field(
+        default=None,
+        description="NOT a Tier-1 model input, unlike amount_zscore_vs_own_history above -- a "
+        "diagnostic z-score, computed only for this response, of this transaction's trailing-1h "
+        "count against the same count measured at each of the account's own prior transactions. "
+        "Did not contribute to risk_score. None below ZSCORE_MIN_PRIOR prior transactions.",
+    )
+    velocity_anomaly: bool = Field(
+        description="abs(velocity_zscore_1h) > 2. Same untuned-threshold caveat as "
+        "amount_anomaly; unlike amount_anomaly, also not a signal the model saw.",
+    )
+    decision_rationale: str = Field(
+        description="A short, deterministic sentence built from decision plus which flags "
+        "fired -- not free text from a model, and not a SHAP-style attribution (that is "
+        "top_features, withheld from every response including this one). Names which flags "
+        "fired alongside the decision; does not assert that either one caused it, and "
+        "velocity_anomaly in particular was not a signal risk_score was computed from.",
+    )
+
+
+class RazorpayWebhookResponse(BaseModel):
+    """The response to a verified Razorpay webhook call.
+
+    See this module's docstring for why ``risk_score``, ``cost_estimate`` and
+    ``merchant_context`` are authorized here and nowhere else on this service. There is no
+    ``confidence`` field: nothing this system produces measures calibration or ensemble
+    agreement distinctly from ``risk_score`` itself, and BUILD_LOG.md records that one was
+    considered and dropped rather than invented.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    transaction_id: str
+    account_id: str
+    decision: Decision
+    audit_id: int
+    degraded: bool
+    decided_at: datetime
+    model_version: str
+    risk_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Calibrated fraud probability -- deliberately returned here, unlike "
+        "ScoreResponse. See this module's docstring.",
+    )
+    cost_estimate: DecisionCostBlock
+    merchant_context: MerchantRiskContext
+    timestamp: datetime
