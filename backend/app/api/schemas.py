@@ -257,6 +257,21 @@ class AuditListResponse(BaseModel):
     entries: tuple[AuditEntryResponse, ...]
 
 
+class AuditFeedResponse(BaseModel):
+    """A page of recorded decisions across transactions, newest first.
+
+    What ``GET /audit`` returns — the decision table's and the live feed's backlog source.
+    Distinct from :class:`AuditListResponse`, which is scoped to one already-known
+    ``transaction_id``; this is the unscoped list, so it carries ``count`` the way
+    :class:`TransactionListResponse` does rather than a single fixed identifier.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    entries: tuple[AuditEntryResponse, ...]
+    count: int = Field(ge=0, description="Rows in this page, not the total matching.")
+
+
 class FeatureContribution(BaseModel):
     """One feature's signed contribution to a decision, in margin space."""
 
@@ -315,6 +330,38 @@ class RingMember(BaseModel):
     account_id: str
 
 
+class RingGraphNode(BaseModel):
+    """One node of a flagged ring's topology, for the Phase 8 network view.
+
+    An account node's ``node_id`` is the plain ``account_id`` -- already exposed on
+    ``RingResponse.members``, so hashing it here would just be a second encoding of a value this
+    same response already carries in the clear. An entity node's ``node_id`` is a truncated
+    SHA-256 of the raw composite fingerprint (a ``card1``/``card4``/... tuple, or a device
+    fingerprint) -- never the fingerprint itself, which is exactly the kind of identity signal
+    no other response on this API returns. See
+    :func:`app.models.tier3_graph.export_ring_edges`, which produces the value stored here; this
+    schema only carries it across the wire.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    node_id: str
+    kind: str = Field(description="'account' or 'entity'.")
+    entity_type: str | None = Field(
+        default=None,
+        description="The fingerprint spec name (e.g. 'device_fp'). None for account nodes.",
+    )
+
+
+class RingGraphEdge(BaseModel):
+    """One edge of a flagged ring's topology: an account-account or account-entity incidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: str = Field(description="A RingGraphNode.node_id.")
+    target: str = Field(description="A RingGraphNode.node_id.")
+
+
 class RingResponse(BaseModel):
     """One abuse ring, as exposed to a reviewer.
 
@@ -322,6 +369,10 @@ class RingResponse(BaseModel):
     threshold or the per-feature weights behind the ring score — the router's own Phase 0
     docstring names that as the line, because a ring endpoint that reports how far a ring sat
     from the threshold tells a ring operator exactly how much to shrink.
+
+    ``nodes``/``edges`` are the Phase 8 addition: the same ring's topology, for the network
+    graph view. Empty on a ring trained before Phase 8 -- ``Tier3Model.load`` tolerates an
+    artifact with no stored topology rather than requiring every registered model retrained.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -330,6 +381,8 @@ class RingResponse(BaseModel):
     ring_size: int = Field(ge=0)
     members: tuple[RingMember, ...]
     snapshot_end: datetime | None
+    nodes: tuple[RingGraphNode, ...] = ()
+    edges: tuple[RingGraphEdge, ...] = ()
 
 
 class RingListResponse(BaseModel):
@@ -340,3 +393,45 @@ class RingListResponse(BaseModel):
     rings: tuple[RingResponse, ...]
     count: int = Field(ge=0)
     model_version: str
+
+
+class FeedEvent(BaseModel):
+    """One decision, pushed to every subscribed analyst socket as it is made.
+
+    Analyst-only, matching the WS route's own scope gate: this event carries
+    ``risk_probability`` and no coarser banding of it, for the same reason
+    :class:`ExplanationResponse` does -- ``risk_band`` is kept in this module precisely so the
+    frontend can compute it client-side from a probability only an analyst ever receives. No
+    field of ``DecisionCost`` appears here either; that gate is not scope-dependent, it does
+    not relax for any caller.
+
+    ``amount`` comes from the scoring request itself, not from any persisted row -- ``POST
+    /score`` does not write to ``transactions``, so there is nowhere else this event could
+    read it from.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["decision"] = "decision"
+    audit_id: int
+    transaction_id: str
+    account_id: str
+    decided_at: datetime
+    decision: Decision
+    risk_probability: float = Field(ge=0.0, le=1.0)
+    amount: str
+    degraded: bool
+    model_version: str
+
+
+class WsTicketResponse(BaseModel):
+    """A short-lived, audience-scoped credential for one ``GET /ws/feed`` connection.
+
+    See :func:`app.core.security.mint_ws_ticket` for why this exists rather than reusing the
+    caller's ordinary bearer token in the WebSocket URL.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ticket: str
+    expires_in: int = Field(description="Seconds until the ticket expires.")

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.core.security import create_access_token
-from app.db.session import get_scoped_session
+from app.db.session import get_analyst_session, get_scoped_session
 from app.main import create_app
 
 #: The signing key every test token is minted with. Not a secret: it signs nothing that exists
@@ -125,7 +125,10 @@ def app(settings: Settings, session: FakeSession) -> FastAPI:
     """
     application = create_app(settings)
     application.state.rate_limiter = PermissiveLimiter()
+    # Both session dependencies point at the same fake so a test can inspect one `session`
+    # fixture regardless of which route (write path vs read path) it exercises.
     application.dependency_overrides[get_scoped_session] = lambda: session
+    application.dependency_overrides[get_analyst_session] = lambda: session
     return application
 
 

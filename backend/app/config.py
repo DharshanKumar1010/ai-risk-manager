@@ -18,6 +18,12 @@ PLACEHOLDER_JWT_SECRET = "dev-only-placeholder-change-me-before-deploy"
 # output. PyJWT warns below this; we refuse below it.
 MIN_JWT_SECRET_BYTES = 32
 
+#: Same placeholder-refusal pattern as the JWT secret, for a key that guards a different
+#: property: not authentication, but whether Tier-3's exported entity ids are reversible. See
+#: ``entity_anonymization_key``'s own description.
+PLACEHOLDER_ENTITY_ANONYMIZATION_KEY = "dev-only-placeholder-change-me-before-deploy"
+MIN_ENTITY_ANONYMIZATION_KEY_BYTES = 32
+
 # Repo-root ``data/`` on a host checkout (backend/app/config.py -> up three -> repo root),
 # and ``/data`` inside the backend container, where ``/srv`` is the backend directory.
 # docker-compose sets DATA_DIR explicitly as well, so the deployment does not depend on
@@ -69,6 +75,14 @@ class Settings(BaseSettings):
         "which silently disables every row-level-security policy. Falls back to database_url "
         "when unset, so a local superuser setup still works.",
     )
+    pipeline_database_url: str | None = Field(
+        default=None,
+        description="DSN the Phase 1 pipeline writes through. Separate from database_url for "
+        "the same reason migration_database_url is: riskiq_app holds SELECT only on "
+        "transactions and accounts, and the bulk COPY in app.data.pipeline.write_postgres "
+        "needs the read-write riskiq_pipeline role. Falls back to migration_database_url, "
+        "then database_url, so a local superuser setup still works without extra config.",
+    )
     database_echo: bool = Field(
         default=False,
         description="Echo emitted SQL. Never enable outside local debugging.",
@@ -89,6 +103,36 @@ class Settings(BaseSettings):
     jwt_issuer: str = "riskiq"
     jwt_audience: str = "riskiq-api"
     jwt_expiry_seconds: int = Field(default=3600, ge=60, le=86_400)
+
+    entity_anonymization_key: str = Field(
+        default=PLACEHOLDER_ENTITY_ANONYMIZATION_KEY,
+        min_length=MIN_ENTITY_ANONYMIZATION_KEY_BYTES,
+        description="HMAC key behind app.models.tier3_graph.export_ring_edges's entity node "
+        "ids. Unsalted SHA-256 over IEEE-CIS's shared-entity fingerprints (card1/card2/card5/"
+        "addr1, device columns) is reversible by dictionary attack -- the corpus is public and "
+        "each fingerprint field has a small, enumerable domain, so truncation-for-collision-"
+        "resistance does nothing against a preimage search over a few hundred thousand "
+        "candidates. This key is what makes the mapping non-reversible without it. Used only "
+        "at training/export time (app.models.train_tier3.build_served_model) -- never written "
+        "into a Tier3Model artifact, models/registry.json, or any API response.",
+    )
+
+    jwt_ws_audience: str = Field(
+        default="riskiq-ws",
+        description="Audience claim on a websocket ticket. Distinct from jwt_audience so a "
+        "ticket cannot be presented as a bearer token against any REST route -- "
+        "decode_access_token pins the audience it checks, and a ticket minted under this one "
+        "fails verification everywhere except the websocket route that accepts it.",
+    )
+    ws_ticket_expiry_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="How long a websocket ticket is valid for. Short: the ticket exists only "
+        "to get a bearer credential out of the URL query string and into the WS handshake, "
+        "and a stale one sitting in a browser history entry or a proxy log should stop working "
+        "quickly.",
+    )
 
     data_dir: Path = Field(
         default=DEFAULT_DATA_DIR,
@@ -163,6 +207,11 @@ class Settings(BaseSettings):
         return self.migration_database_url or self.database_url
 
     @property
+    def pipeline_url(self) -> str:
+        """Return the DSN the Phase 1 pipeline and the demo seed script write through."""
+        return self.pipeline_database_url or self.migration_database_url or self.database_url
+
+    @property
     def artifact_dir(self) -> Path:
         """Directory holding trained weights. Gitignored; the registry is the tracked part."""
         return self.models_dir / "artifacts"
@@ -188,17 +237,46 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def reject_ws_audience_equal_to_api_audience(self) -> "Settings":
+        """Refuse a deployment where the websocket ticket audience equals the REST audience.
+
+        The entire reason ``mint_ws_ticket`` mints a *separate*-audience token is that a
+        websocket ticket travels somewhere a normal bearer token must not: the URL query
+        string, and therefore uvicorn's access log, any reverse proxy's log, and browser
+        history (see ``app/core/security.py``'s docstring). If ``JWT_WS_AUDIENCE`` were ever
+        set equal to ``JWT_AUDIENCE`` -- both are independently env-settable -- every ticket
+        would decode successfully against every REST route too, and a full-privilege bearer
+        token would be riding in a URL on every live-feed connection. Caught at startup rather
+        than left to be discovered the day a log line turns out to be a valid credential.
+        """
+        if self.jwt_ws_audience == self.jwt_audience:
+            raise ValueError(
+                "jwt_ws_audience must differ from jwt_audience -- see mint_ws_ticket's "
+                "docstring in app/core/security.py for why a shared audience defeats the "
+                "point of a separate websocket ticket."
+            )
+        return self
+
+    @model_validator(mode="after")
     def reject_placeholder_secret_outside_local(self) -> "Settings":
-        """Refuse to boot a deployed environment while still using the placeholder secret.
+        """Refuse to boot a deployed environment while still using a placeholder secret.
 
         Failing at startup is deliberate: a service that silently runs on a well-known
-        signing key is worse than one that does not start.
+        signing key -- or a well-known entity-anonymization key, which makes every exported
+        Tier-3 entity id reversible by anyone who has read this file on GitHub -- is worse than
+        one that does not start.
         """
         deployed = self.environment in ("staging", "production")
         if deployed and self.jwt_secret_key == PLACEHOLDER_JWT_SECRET:
             raise ValueError(
                 f"jwt_secret_key is still the placeholder in environment={self.environment!r}. "
                 "Set JWT_SECRET_KEY to a real value."
+            )
+        if deployed and self.entity_anonymization_key == PLACEHOLDER_ENTITY_ANONYMIZATION_KEY:
+            raise ValueError(
+                f"entity_anonymization_key is still the placeholder in "
+                f"environment={self.environment!r}. Set ENTITY_ANONYMIZATION_KEY to a real "
+                "value before training/exporting Tier-3."
             )
         return self
 

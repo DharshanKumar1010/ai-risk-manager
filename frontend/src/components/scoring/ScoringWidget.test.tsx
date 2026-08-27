@@ -1,0 +1,106 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { ScoringWidget } from '@/components/scoring/ScoringWidget'
+import type { AuditEntryResponse, AuditListResponse, ScoreResponse } from '@/types/api'
+
+const mockUseAuth = vi.fn()
+const mockPostScore = vi.fn()
+const mockGetAuditTrail = vi.fn()
+const mockGetExplanation = vi.fn()
+
+vi.mock('@/hooks/useAuth', () => ({ useAuth: () => mockUseAuth() }))
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api')
+  return {
+    ...actual,
+    postScore: (...args: unknown[]) => mockPostScore(...args),
+    getAuditTrail: (...args: unknown[]) => mockGetAuditTrail(...args),
+    getExplanation: (...args: unknown[]) => mockGetExplanation(...args),
+  }
+})
+
+const SCORE_RESPONSE: ScoreResponse = {
+  transaction_id: 'demo-abc123',
+  decision: 'review',
+  audit_id: 42,
+  degraded: false,
+  decided_at: '2026-08-26T12:00:00Z',
+  model_version: 'tier1-v3',
+}
+
+const AUDIT_ENTRY: AuditEntryResponse = {
+  audit_id: 42,
+  transaction_id: 'demo-abc123',
+  account_id: 'acct-demo',
+  decided_at: '2026-08-26T12:00:00Z',
+  decision: 'review',
+  model_versions: { tier1: 'tier1-v3' },
+  feature_version: 'fv_1',
+  degraded: false,
+  degraded_reason: null,
+}
+
+describe('ScoringWidget', () => {
+  beforeEach(() => {
+    mockUseAuth.mockReturnValue({
+      mintMerchantToken: vi.fn().mockResolvedValue('merchant-token'),
+      analystToken: 'analyst-token',
+    })
+    mockPostScore.mockResolvedValue(SCORE_RESPONSE)
+    mockGetAuditTrail.mockResolvedValue({
+      transaction_id: 'demo-abc123',
+      entries: [AUDIT_ENTRY],
+    } satisfies AuditListResponse)
+    mockGetExplanation.mockResolvedValue({
+      audit_id: 42,
+      transaction_id: 'demo-abc123',
+      decision: 'review',
+      risk_probability: 0.62,
+      top_features: [],
+      model_versions: { tier1: 'tier1-v3' },
+      feature_version: 'fv_1',
+      degraded: false,
+    })
+  })
+
+  it('scores a transaction with a merchant token and shows only the decision', async () => {
+    
+    render(<ScoringWidget />)
+
+    fireEvent.click(screen.getByRole('button', { name: /score transaction/i }))
+
+    await waitFor(() => expect(mockPostScore).toHaveBeenCalledTimes(1))
+    const [payload, token] = mockPostScore.mock.calls[0] as [unknown, string]
+    expect(token).toBe('merchant-token')
+    expect(payload).toMatchObject({ account_id: 'acct-demo', amount: '150.00' })
+
+    expect(await screen.findByText('review')).toBeInTheDocument()
+    expect(screen.queryByText(/62/)).not.toBeInTheDocument()
+  })
+
+  it('fetches the real audit row before opening the explain view, never fabricating one', async () => {
+    
+    render(<ScoringWidget />)
+
+    fireEvent.click(screen.getByRole('button', { name: /score transaction/i }))
+    await screen.findByText('review')
+
+    fireEvent.click(screen.getByRole('button', { name: /why\?/i }))
+
+    await waitFor(() =>
+      expect(mockGetAuditTrail).toHaveBeenCalledWith('demo-abc123', 'analyst-token'),
+    )
+    expect(await screen.findByText(/calibrated probability/i)).toBeInTheDocument()
+  })
+
+  it('reports a scoring failure instead of crashing', async () => {
+    mockPostScore.mockRejectedValueOnce(new Error('boom'))
+    
+    render(<ScoringWidget />)
+
+    fireEvent.click(screen.getByRole('button', { name: /score transaction/i }))
+
+    expect(await screen.findByText(/could not score this transaction/i)).toBeInTheDocument()
+  })
+})

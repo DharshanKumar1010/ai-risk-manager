@@ -10,129 +10,6 @@ PaySim's observed money-flow graph is a **star forest**: 99.95% of origins have 
 
 IEEE-CIS has no money-flow edge at all, so its rings come from shared-entity co-occurrence. Its single columns are buckets rather than identifiers — `card4` and `card6` hold four values each, with 98,466 accounts on one — so entities are composite fingerprints under a degree cap.
 
-## paysim
-
-- Configuration selected on **validation**: `step_window=0,tolerance=0.0` (validation ring PR-AUC 0.9489 over 701 rings at a 0.438 ring base rate)
-- Snapshot cadence 1 days 00:00:00, trailing window 7 days 00:00:00. Maximum score staleness is one cadence, 1 days 00:00:00.
-- **Unit of analysis: the ring.** Chosen on measured coverage, not declared in advance — see the note below where it is not the transaction.
-- Abstention rate on test: **100.0%** of transactions had no ring and were abstained on, not scored as clean.
-
-### Configurations compared (validation)
-
-| configuration | val ring PR-AUC | rings | base rate |
-|---|---|---|---|
-| `step_window=0,tolerance=0.0` **(selected)** | 0.9489 | 701 | 0.438 |
-| `step_window=1,tolerance=0.0` | 0.9443 | 706 | 0.431 |
-| `step_window=3,tolerance=0.0` | 0.9192 | 728 | 0.422 |
-
-### Ring-level classification — held-out test
-
-Unit of analysis is a **candidate ring**, declared rather than implied, the same move Phase 3 made in evaluating Tier-2 per account. Every detected ring is fraud-bearing or clean, so the confusion matrix is fully defined.
-
-**This is also the conditional-separation measurement.** Every candidate ring exists because a chain edge created it — the star filter removes everything else — so the detected-ring population *is* the pairing rule's output. The ring base rate below is the share of that rule's own hits which are real, and the graph's job inside the population is to rank. A PR-AUC at the base rate would mean the graph found nothing the rule had not already found.
-
-```
-### tier3-paysim-ring — held-out test (n=2,507, positives=2,098, base rate=83.6857%)
-Threshold: 0.999995  (chosen on validation by minimum estimated cost on validation rings, raised to respect a 1.0% review-capacity cap)
-
-PR-AUC     0.9977  (95% CI 0.9962-0.9989)
-           no-skill floor 0.8369 (1.2x lift)
-Precision  1.0000      Recall  0.0057      F1  0.0114
-
-Confusion matrix        Predicted
-                     neg        pos
-Actual  neg        409          0
-        pos      2,086         12
-
-False-positive cost estimate: 2,561,798,006.45 per 1,000 rings  [PaySim amount units (synthetic, no currency)]
-  0 false positives x 37,355.70 = 0.00
-  2,086 false negatives (amount + 37,355.70) = 6,422,427,602.17
-  total = 6,422,427,602.17 over 2,507 rings
-  flag rate = 0.48% (12 sent for review)
-  Assumptions:
-    - A false positive costs 37,355.70 PaySim amount units (synthetic, no currency) - analyst time on a manual review, or the lost margin and friction of declining a good customer.
-    - A false negative costs the transaction amount plus a flat 37,355.70 - the chargeback fee and internal handling on top of the value lost.
-    - Cost is linear in the number of mistakes: no queue-congestion effect, no customer-churn effect from repeated false declines, no recovery on disputed fraud. All three would raise the true cost of a false positive.
-    - Every fraud is assumed to charge back. In practice some share is never disputed, which would lower false-negative cost.
-    - Review capacity is unbounded. This is the assumption that bites hardest: the cost-minimising threshold below flags whatever share of traffic the arithmetic favours, with no ceiling on the queue it implies.
-
-!! PR-AUC exceeds 0.95 on fraud data. Treat as a suspected leak until disproven (ml-evaluation-standards section 4).
-```
-
-### Baseline: the pairing rule alone, no graph
-
-PR-AUC 0.9891 · precision 0.9948 · recall 0.9943 · F1 0.9945
-
-```
-Confusion matrix        Predicted
-                     neg        pos
-Actual  neg    412,256         21
-        pos         23      3,997
-```
-
-### What the graph adds over the pairing rule
-
-The candidate rings are the pairing rule's output, so the rule's own performance on this population is the no-skill floor — it flags all of them and ranks none. The graph's contribution is how far ring PR-AUC sits above that floor.
-
-Ring PR-AUC − ring base rate = **+0.1609** (95% CI +0.1593 to +0.1620, bootstrapped over rings)
-
-The interval stays above the floor, so the ranking the graph adds inside the pairing rule's own hits is real at this sample size.
-
-### Surrogate ring recovery
-
-> **This ground truth is a surrogate.** PaySim ships `isFraud` per transaction and no ring or agent identifier, so a true ring is constructed as a connected component of the fraud-only induced graph. It is a defensible construction and it is still a construction.
-
-At overlap coefficient ≥ 0.3 (selected on validation): 2,053 of 2,507 detected rings matched a surrogate ring (precision 0.819); 2,052 of 2,822 surrogate rings were recovered (recall 0.727); F1 0.770.
-
-### Enrichment — the check that needs no surrogate
-
-top-250 rings: 0.996 fraud-bearing against a 0.837 ring base rate (1.2x)
-
-This view depends on no ground-truth partition. Where it and the surrogate recovery disagree, the surrogate definition is driving the result and the ring headline is withdrawn.
-
-### Cost sensitivity
-
-ml-evaluation-standards section 3: a recommended threshold is justified by cost, and the recommendation has to survive the cost assumptions being wrong. Both sweeps re-choose the threshold at each setting, on the **validation** split, and are measured per ring.
-
-> **The two sweeps are not equally informative, and the first cannot be.** Scaling both cost parameters by the same factor multiplies total cost by that factor and therefore cannot move the argmin — the threshold is identical at 0.5x, 1.0x and 1.5x by construction, not as evidence of robustness. It is reported because section 3 names a +/-50% analysis, and it is labelled here so that its flatness is not read as a result. The **review-cost sweep below is the informative one**: it varies the false-positive-to-false-negative *ratio*, which is what the threshold actually depends on.
-
-```
-Both costs scaled (+/-50%)
-  factor   threshold        total cost        FP        FN   flag rate
-    0.5x      0.273497      5,248,475.48       281         0     83.88%
-    1.0x      0.273497     10,496,950.95       281         0     83.88%
-    1.5x      0.273497     15,745,426.43       281         0     83.88%
-```
-
-```
-Review cost raised against a fixed fraud cost
-  factor   threshold        total cost        FP        FN   flag rate
-    1.0x      0.273497     10,496,950.95       281         0     83.88%
-    5.0x      0.507951     44,654,787.20       175         2     68.47%
-   25.0x      0.698764    149,012,442.19        27        32     43.08%
-  100.0x      0.971158    206,751,810.34         6        48     37.80%
-```
-
-### Recommended operating point
-
-Threshold 0.999995 per ring — flags **0.48%** of the population against a 1.0% review-capacity cap, at precision 1.0000 / recall 0.0057 / F1 0.0114.
-
-### Latency
-
-p50 0.001ms · p95 0.002ms · budget 50ms
-
-Serving is a dictionary lookup into a precomputed score table. No graph algorithm runs in the request path, which is what makes Phase 7's Tier-3 timeout and degraded-mode fallback implementable.
-
-### What this does NOT catch
-
-- 2,086 of 2,098 fraud-bearing test rings (99.4%) scored below the 1.0000 operating threshold.
-- Every transaction whose account is not in a detected ring is abstained on: 100.0% of test transactions. On PaySim that is almost all of them, because origins are near-unique and a first-time account has no links to reason about. Tier-3 cannot catch a one-shot fraud by a previously unseen account at any threshold -- Tier-1 is the only layer covering that case.
-- Missed fraud-bearing rings hold a median of 4 accounts against 4 for the population.
-
-### Notes and gaps
-
-- **The unit of analysis on this corpus is the ring, not the transaction.** 100.0% of test transactions abstained, because PaySim origins are near-unique -- 99.95% have degree 1 -- so an account seen in one snapshot window essentially never returns in the next. A per-transaction ring score is therefore structurally unavailable here, which is why the ring-level result is the one reported and no transaction-level headline is published from a column that is almost entirely abstentions.
-
 ## ieee_cis
 
 - Configuration selected on **validation**: `entity_cap=200,all_fingerprints` (validation ring PR-AUC 0.5859 over 1,132 rings at a 0.133 ring base rate)
@@ -146,9 +23,9 @@ Serving is a dictionary lookup into a precomputed score table. No graph algorith
 
 | configuration | val ring PR-AUC | rings | base rate |
 |---|---|---|---|
-| `entity_cap=50,all_fingerprints` | 0.2181 | 1,683 | 0.093 |
+| `entity_cap=50,all_fingerprints` | 0.2201 | 1,683 | 0.093 |
 | `entity_cap=200,all_fingerprints` **(selected)** | 0.5859 | 1,132 | 0.133 |
-| `entity_cap=50,non_circular_only` | 0.3054 | 321 | 0.240 |
+| `entity_cap=50,non_circular_only` | 0.3145 | 322 | 0.239 |
 
 ### Ring-level classification — held-out test
 
@@ -157,23 +34,23 @@ Unit of analysis is a **candidate ring**, declared rather than implied, the same
 This corpus has **no chain edge and no pairing rule** — it carries no money-flow edge at all, so its rings come from shared-entity co-occurrence and the star filter is deliberately skipped. There is therefore no conditional-separation reading here: the base rate below is simply the share of detected communities that are fraud-bearing.
 
 ```
-### tier3-ieee_cis-ring — held-out test (n=1,329, positives=143, base rate=10.7600%)
-Threshold: 0.785147  (chosen on validation by minimum estimated cost on validation rings, raised to respect a 1.0% review-capacity cap)
+### tier3-ieee_cis-ring — held-out test (n=1,328, positives=143, base rate=10.7681%)
+Threshold: 0.7851465236589958  (minimum estimated cost on validation rings, raised to respect a 1.0% review-capacity cap)
 
-PR-AUC     0.6462  (95% CI 0.5703-0.7214)
-           no-skill floor 0.1076 (6.0x lift)
+PR-AUC     0.6465  (95% CI 0.5700-0.7171)
+           no-skill floor 0.1077 (6.0x lift)
 Precision  0.8889      Recall  0.1119      F1  0.1988
 
 Confusion matrix        Predicted
                      neg        pos
-Actual  neg      1,184          2
+Actual  neg      1,183          2
         pos        127         16
 
-False-positive cost estimate: 2,438,356.37 per 1,000 rings  [IEEE-CIS amount units (consistent with USD)]
+False-positive cost estimate: 2,440,192.48 per 1,000 rings  [IEEE-CIS amount units (consistent with USD)]
   2 false positives x 15.00 = 30.00
   127 false negatives (amount + 15.00) = 3,240,545.61
-  total = 3,240,575.61 over 1,329 rings
-  flag rate = 1.35% (18 sent for review)
+  total = 3,240,575.61 over 1,328 rings
+  flag rate = 1.36% (18 sent for review)
   Assumptions:
     - A false positive costs 15.00 IEEE-CIS amount units (consistent with USD) - analyst time on a manual review, or the lost margin and friction of declining a good customer.
     - A false negative costs the transaction amount plus a flat 15.00 - the chargeback fee and internal handling on top of the value lost.
@@ -186,7 +63,7 @@ False-positive cost estimate: 2,438,356.37 per 1,000 rings  [IEEE-CIS amount uni
 
 ```
 ### tier3-ieee_cis-transaction — held-out test (n=88,581, positives=3,083, base rate=3.4804%)
-Threshold: 0.678513  (chosen on validation by minimum estimated cost on validation transactions, raised to respect a 1.0% review-capacity cap)
+Threshold: 0.6785133318506584  (minimum estimated cost on validation transactions, raised to respect a 1.0% review-capacity cap)
 
 PR-AUC     0.0314  (95% CI 0.0312-0.0317)
            no-skill floor 0.0348 (0.9x lift)
@@ -257,7 +134,7 @@ Threshold 0.678513 per transaction — flags **2.40%** of the population against
 
 ### Latency
 
-p50 0.001ms · p95 0.003ms · budget 50ms
+p50 0.003ms · p95 0.006ms · budget 50ms
 
 Serving is a dictionary lookup into a precomputed score table. No graph algorithm runs in the request path, which is what makes Phase 7's Tier-3 timeout and degraded-mode fallback implementable.
 

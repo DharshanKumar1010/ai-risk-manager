@@ -30,8 +30,9 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import audit, health, rings, score, transactions
+from app.api import audit, auth, feed, health, rings, score, transactions
 from app.config import Settings, get_settings
+from app.core.feed import FeedBroadcaster
 from app.core.rate_limit import build_rate_limiter
 from app.core.serving import ModelBundle, shutdown_tier3_executor
 
@@ -92,6 +93,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.settings = cfg
     application.state.rate_limiter = build_rate_limiter(cfg)
     application.state.model_bundle = None
+    # In-process fan-out for the live scoring feed. See app/core/feed.py's module docstring
+    # for the stated limit: this does not survive a multi-worker deployment.
+    application.state.feed_broadcaster = FeedBroadcaster()
 
     application.add_middleware(
         CORSMiddleware,
@@ -115,6 +119,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(transactions.router)
     application.include_router(audit.router)
     application.include_router(rings.router)
+    application.include_router(feed.auth_router)
+    application.include_router(feed.feed_router)
+
+    if cfg.environment in ("local", "ci"):
+        # Registered conditionally, not gated inside the handler -- see auth.py's module
+        # docstring for why. Outside local/ci the path does not exist at all: it 404s like
+        # any unrouted path, and never appears in /openapi.json.
+        application.include_router(auth.router)
 
     return application
 

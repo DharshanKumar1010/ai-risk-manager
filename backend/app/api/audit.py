@@ -5,7 +5,11 @@ below the application too — the Phase 7 migration grants ``audit_log`` only ``
 and defines no ``FOR UPDATE`` or ``FOR DELETE`` policy, so the database refuses a rewrite even
 if a future route asks for one.
 
-Two routes, deliberately split by what they disclose:
+Three routes, deliberately split by what they disclose:
+
+``GET /audit``
+    A page of recent decisions across transactions, newest first — the decision table's and
+    the live feed's backlog source. Account-scoped exactly as ``GET /transactions`` is.
 
 ``GET /audit/{transaction_id}``
     The decision and its provenance. Available to anyone who may read the account.
@@ -20,12 +24,13 @@ Two routes, deliberately split by what they disclose:
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
     AuditEntryResponse,
+    AuditFeedResponse,
     AuditListResponse,
     ExplanationResponse,
     FeatureContribution,
@@ -41,7 +46,7 @@ from app.core.security import (
     require_account_access,
     require_scopes,
 )
-from app.db.session import get_scoped_session
+from app.db.session import get_analyst_session
 from app.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/audit", tags=["audit"])
@@ -49,6 +54,55 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 #: Most recorded decisions returned for one transaction. A transaction can be scored more than
 #: once — a replay, or a redelivered webhook — but not many times.
 MAX_ENTRIES = 50
+
+#: Page size bounds for the unscoped feed. Mirrors GET /transactions.
+FEED_DEFAULT_LIMIT = 50
+FEED_MAX_LIMIT = 200
+
+
+@router.get(
+    "",
+    response_model=AuditFeedResponse,
+    summary="List recent decisions visible to the caller",
+    dependencies=[Depends(enforce_rate_limit)],
+)
+async def list_audit_entries(
+    principal: Annotated[Principal, Depends(require_scopes(SCOPE_AUDIT_READ))],
+    session: Annotated[AsyncSession, Depends(get_analyst_session)],
+    limit: Annotated[int, Query(ge=1, le=FEED_MAX_LIMIT)] = FEED_DEFAULT_LIMIT,
+    offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
+) -> AuditFeedResponse:
+    """Return the caller's most recent recorded decisions, newest first.
+
+    This is what the dashboard's decision table and the live feed's on-connect backlog both
+    read from — ``POST /score`` does not persist the transaction it scores (see
+    ``BUILD_LOG.md``'s Phase 7 known gaps), so ``GET /transactions`` never shows a live-scored
+    row. ``audit_log`` is written on every scoring call regardless, which is what makes this
+    the correct source for "what has this service decided lately".
+
+    Args:
+        principal: The verified caller, holding ``audit:read``.
+        session: Session scoped for row-level security — account-scoped for a merchant,
+            estate-wide for an analyst.
+        limit: Page size, bounded.
+        offset: Rows to skip, bounded.
+
+    Returns:
+        A page of decisions. An account-scoped caller sees only its own; an analyst sees
+        across the estate.
+    """
+    scope = account_filter(principal)
+    if scope is AccountScope.NOTHING:
+        return AuditFeedResponse(entries=(), count=0)
+
+    statement = select(AuditLog).order_by(AuditLog.decided_at.desc())
+    if scope is not AccountScope.UNRESTRICTED:
+        statement = statement.where(AuditLog.account_id == scope)
+    statement = statement.limit(limit).offset(offset)
+
+    rows = (await session.execute(statement)).scalars().all()
+    entries = tuple(_to_entry(row) for row in rows)
+    return AuditFeedResponse(entries=entries, count=len(entries))
 
 
 @router.get(
@@ -59,7 +113,7 @@ MAX_ENTRIES = 50
 )
 async def read_audit_trail(
     principal: Annotated[Principal, Depends(require_scopes(SCOPE_AUDIT_READ))],
-    session: Annotated[AsyncSession, Depends(get_scoped_session)],
+    session: Annotated[AsyncSession, Depends(get_analyst_session)],
     transaction_id: Annotated[str, Path(min_length=1, max_length=128)],
 ) -> AuditListResponse:
     """Return every recorded decision for ``transaction_id``, newest first.
@@ -99,10 +153,8 @@ async def read_audit_trail(
     dependencies=[Depends(enforce_rate_limit)],
 )
 async def explain_decision(
-    principal: Annotated[
-        Principal, Depends(require_scopes(SCOPE_EXPLAIN_READ, SCOPE_ANALYST))
-    ],
-    session: Annotated[AsyncSession, Depends(get_scoped_session)],
+    principal: Annotated[Principal, Depends(require_scopes(SCOPE_EXPLAIN_READ, SCOPE_ANALYST))],
+    session: Annotated[AsyncSession, Depends(get_analyst_session)],
     audit_id: Annotated[int, Path(ge=1)],
 ) -> ExplanationResponse:
     """Return the feature attribution behind one recorded decision.

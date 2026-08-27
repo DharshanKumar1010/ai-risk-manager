@@ -114,6 +114,7 @@ from app.models.tier3_graph import (  # noqa: E402
     benchmark_latency,
     build_score_table,
     detect_communities,
+    export_ring_edges,
     feature_names_for,
     fit_ring_scorer,
     ring_feature_frame,
@@ -1678,18 +1679,38 @@ def ring_flags_from_frame(rings: pd.DataFrame, snapshot_end: pd.Timestamp) -> li
     return flags
 
 
-def build_served_model(report: CorpusReport, model_id: str) -> Tier3Model:
+def build_served_model(
+    report: CorpusReport,
+    model_id: str,
+    frame: pd.DataFrame,
+    factory: GraphFactory,
+    *,
+    entity_anonymization_key: bytes,
+) -> Tier3Model:
     """Freeze the most recent snapshot's rings into the score table serving reads.
 
     Serving reads a table, not a graph. The most recent snapshot is the one a request at
     "now" would be scored against, so it is the one that gets frozen; every earlier snapshot
     existed only to produce the evaluation.
+
+    ``frame`` and ``factory`` (the winning configuration's, not any factory) exist for exactly
+    one reason: :func:`run_snapshots` never kept the graph itself, only the feature rows it
+    produced, so the topology :func:`export_ring_edges` needs for the Phase 8 network view has
+    to be rebuilt. Rebuilding costs one extra snapshot -- the same ``window_rows`` slice and
+    ``factory().insert(...).snapshot(...)`` call :func:`run_snapshots` already made for this one
+    boundary -- not the whole sweep, and reproduces the exact same graph deterministically.
+
+    ``entity_anonymization_key`` is ``Settings.entity_anonymization_key``, UTF-8 encoded by the
+    caller -- see :func:`app.models.tier3_graph._anonymized_entity_id` for why an unkeyed hash
+    would not actually anonymize an IEEE-CIS shared-entity fingerprint. Required, not defaulted:
+    a training run that forgot to pass it should fail loudly rather than silently fall back to
+    an empty or fixed key.
     """
     account_rings = report.winner.account_rings
-    latest = account_rings["snapshot_end"].max()
+    latest = cast(pd.Timestamp, account_rings["snapshot_end"].max())
     current = account_rings.loc[account_rings["snapshot_end"] == latest]
 
-    flags = ring_flags_from_frame(current, cast(pd.Timestamp, latest))
+    flags = ring_flags_from_frame(current, latest)
     scores, ring_of, ring_sizes = build_score_table(flags)
 
     # Every account the snapshot held, not only the scoreable ones. Without it the two
@@ -1697,8 +1718,30 @@ def build_served_model(report: CorpusReport, model_id: str) -> Tier3Model:
     # component below the minimum ring size, is recorded in the audit trail as one it has
     # never seen any links for.
     seen = frozenset(
-        str(account) for account in report.winner.seen_accounts.get(cast(pd.Timestamp, latest), ())
+        str(account) for account in report.winner.seen_accounts.get(latest, ())
     ) | frozenset(scores)
+
+    times = frame["event_time"]
+    window_rows = frame.loc[(times >= latest - report.window) & (times < latest)]
+    graph = factory()
+    graph.insert(window_rows)
+    snapshot = graph.snapshot(latest.to_pydatetime())
+    communities = detect_communities(snapshot)
+    topology = export_ring_edges(snapshot, communities, key=entity_anonymization_key)
+    # Restricted to scoreable rings (those `build_score_table` actually assigned accounts to) --
+    # the same population `ring_sizes`/`ring_of` cover, not every community this snapshot
+    # detected structurally.
+    scoreable_ring_ids = set(ring_of.values())
+    ring_nodes = {
+        ring_id: nodes
+        for ring_id, (nodes, _edges) in topology.items()
+        if ring_id in scoreable_ring_ids
+    }
+    ring_edges = {
+        ring_id: edges
+        for ring_id, (_nodes, edges) in topology.items()
+        if ring_id in scoreable_ring_ids
+    }
 
     return Tier3Model(
         model_id=model_id,
@@ -1707,10 +1750,12 @@ def build_served_model(report: CorpusReport, model_id: str) -> Tier3Model:
         scores=scores,
         ring_of=ring_of,
         ring_sizes=ring_sizes,
-        snapshot_end=cast(pd.Timestamp, latest).to_pydatetime(),
+        snapshot_end=latest.to_pydatetime(),
         seen_accounts=seen,
         scorer=report.winner.scorer,
         parameters=dict(report.winner.parameters),
+        ring_nodes=ring_nodes,
+        ring_edges=ring_edges,
     )
 
 
@@ -2274,6 +2319,7 @@ def run(
     registry_path: Path,
     artifact_dir: Path,
     *,
+    entity_anonymization_key: bytes,
     sample: int | None = None,
     corpora: Sequence[SourceDataset] = ("paysim", "ieee_cis"),
 ) -> list[CorpusReport]:
@@ -2343,8 +2389,19 @@ def run(
             )
             add_ieee_lift(report, frame, artifact_dir, registry_path)
 
+        winner_factory = next(
+            candidate_factory
+            for label, _parameters, candidate_factory in configurations
+            if label == report.winner.label
+        )
         model_id = build_model_id("tier3-graph", "louvain", source)
-        model = build_served_model(report, model_id)
+        model = build_served_model(
+            report,
+            model_id,
+            frame,
+            winner_factory,
+            entity_anonymization_key=entity_anonymization_key,
+        )
         report.model = model
         report.false_negatives = profile_false_negatives(report)
 
@@ -2552,6 +2609,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         notebook_dir=root / "notebooks",
         registry_path=root / "models" / "registry.json",
         artifact_dir=root / "models" / "artifacts",
+        entity_anonymization_key=settings.entity_anonymization_key.encode("utf-8"),
         sample=arguments.sample,
         corpora=corpora,
     )

@@ -7,9 +7,10 @@ overridden server-side still invites a reader to believe it does something, and 
 to touch the route has to rediscover that it does not.
 
 Defence in depth, and both halves are real. The ORM query filters on the principal's account,
-*and* the session runs with ``app.current_account_id`` set so the row-level security policy
-filters too. Either alone would be sufficient on a correct day; together, a mistake in one is
-caught by the other.
+*and* the session runs with ``app.current_account_id`` (merchant reads) or ``SET ROLE
+riskiq_analyst`` (analyst reads) set so the row-level security policy filters too — see
+:func:`app.db.session.get_analyst_session`. Either alone would be sufficient on a correct day;
+together, a mistake in one is caught by the other.
 """
 
 from typing import Annotated
@@ -27,7 +28,7 @@ from app.core.security import (
     account_filter,
     require_scopes,
 )
-from app.db.session import get_scoped_session
+from app.db.session import get_analyst_session
 from app.models.transaction import Transaction
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -45,7 +46,7 @@ MAX_LIMIT = 200
 )
 async def list_transactions(
     principal: Annotated[Principal, Depends(require_scopes(SCOPE_TRANSACTIONS_READ))],
-    session: Annotated[AsyncSession, Depends(get_scoped_session)],
+    session: Annotated[AsyncSession, Depends(get_analyst_session)],
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
 ) -> TransactionListResponse:

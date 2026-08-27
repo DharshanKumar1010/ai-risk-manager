@@ -60,6 +60,9 @@ services:
       # Kept separate so a failing migration is never "fixed" by pointing the application at
       # the superuser, which would disable every RLS policy while leaving them in the schema.
       MIGRATION_DATABASE_URL: postgresql+asyncpg://riskiq:${POSTGRES_PASSWORD:-riskiq_local_dev}@postgres:5432/riskiq
+      # The Phase 1 pipeline's bulk COPY and the demo seed script's transaction/account writes
+      # need the read-write riskiq_pipeline role — riskiq_app holds SELECT only on these tables.
+      PIPELINE_DATABASE_URL: postgresql+asyncpg://riskiq_pipeline:${RISKIQ_PIPELINE_PASSWORD:-riskiq_pipeline_local_dev}@postgres:5432/riskiq
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-placeholder-change-me-before-deploy}
       DATA_DIR: /data

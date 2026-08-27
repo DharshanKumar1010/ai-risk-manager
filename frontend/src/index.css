@@ -1,15 +1,186 @@
 @import 'tailwindcss';
 
-/* Phase 8 replaces this with the risk-ops console's design tokens. Until then the
-   only base rules here are ones no later design decision would want to undo. */
+/*
+ * RiskIQ design tokens — stated before any component exists, per Phase 8 step 1.
+ *
+ * WHAT THIS PRODUCT IS, FOR DESIGN PURPOSES: a risk-ops console an analyst watches during a
+ * shift, making real decisions with financial stakes, under time pressure. Not a marketing
+ * site, not a generic admin CRUD panel, not a SaaS onboarding flow. The nearest relatives are
+ * a trading terminal, a SOC (security operations centre) dashboard, and an observability tool
+ * like Grafana — dense, high-signal, built for someone who reads it for eight hours a day and
+ * needs the one abnormal number to jump out without any decoration competing for attention.
+ *
+ * FOUR DECISIONS, STATED AND WHY:
+ *
+ * 1. DARK BASE, NOT A TOGGLE-LATER AFTERTHOUGHT. Ops consoles run dark by convention — long
+ *    monitoring sessions, and a bright white panel is the thing that actually hurts to look at
+ *    for eight hours. Base is a graphite/charcoal, not pure black: pure black against white
+ *    text is harsher contrast than the eye needs and reads as "OLED phone app," not
+ *    "instrument panel." Both light and dark tokens are defined here from the start (the
+ *    enhancement pass adds the toggle UI, not the underlying palette), because retrofitting a
+ *    light mode onto colours chosen only for dark is how you end up with muddy midtones.
+ *
+ * 2. SIGNAL COLOUR IS SPENT ON DECISIONS ONLY, NEVER ON DECORATION. Three states this system
+ *    actually produces: `allow` (restrained green), `review` (amber — this is the ONE
+ *    consequential decision _decide() ever returns, since the shipped policy never emits
+ *    `block`, so amber carries the real visual weight here) and `degraded` (a distinct,
+ *    cooler warning tone — a system-health signal, not a risk signal, and conflating the two
+ *    would make an analyst read "Tier-3 timed out" as "this transaction is dangerous"). A
+ *    `block` token exists because the schema allows the value; no view should ever render a
+ *    legend swatch for it. One accent hue (a controlled cyan-blue) does everything
+ *    interactive — links, focus rings, a chart's primary series — and nothing else, so it
+ *    stays legible as "click here" / "look here" rather than blurring into ambient colour.
+ *
+ * 3. MONOSPACE FOR DATA, GROTESK SANS FOR CHROME. Every number, id, hash and timestamp renders
+ *    in a monospace face with tabular figures; labels, headings and buttons render in a plain
+ *    system sans. This is the same split Grafana, Datadog and every trading terminal make, and
+ *    it exists for a concrete reason, not aesthetics: tabular monospace numerals align in a
+ *    column, so a column of amounts or probabilities can be scanned vertically the way a
+ *    ledger is scanned, and a reader's eye can tell "this is a measured value" from "this is
+ *    interface text" without reading the label first. System font stacks only — no web-font
+ *    request, no FOUC, no dependency — which is also just the honest choice for a project this
+ *    size rather than a cosmetic one.
+ *
+ * 4. SHARP CORNERS, RULE LINES OVER SHADOWS. A 2px radius, not the rounded-2xl / soft-shadow
+ *    look of a generic dark-mode SaaS dashboard the brief explicitly warns against. Panels are
+ *    separated by a 1px border, not a drop shadow — shadows read as floating cards on a
+ *    marketing page; a hairline rule reads as an instrument panel's actual seams. The
+ *    network-force graph is this system's stated signature element (Phase 8 step 4); the token
+ *    system's job is to stay out of its way and read correctly behind it, not to invent a
+ *    second signature motif competing with it.
+ */
+
+@theme {
+  --font-sans:
+    -apple-system, 'Segoe UI', system-ui, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+
+  --radius-console: 0.125rem;
+
+  /* DARK IS THE UNCONDITIONAL DEFAULT, not something reached only via a media query. The
+   * whole point of decision 1 above is that this console runs dark by default -- shipping
+   * light-by-default and dark-only-behind-`prefers-color-scheme` would mean most first
+   * visits (anyone without a system dark-mode preference set) never see the design this file
+   * argues for. Light values live below, applied only when explicitly asked for: system
+   * `prefers-color-scheme: light`, or the (enhancement-pass) toggle setting
+   * `data-theme="light"`. This is the "dark-first" pattern -- swap the roles consistently
+   * rather than layering a light override on top of a light default. */
+  --color-bg: oklch(16% 0.006 240);
+  --color-surface: oklch(20% 0.007 240);
+  --color-surface-raised: oklch(24% 0.008 240);
+  --color-border: oklch(30% 0.009 240);
+  --color-border-strong: oklch(40% 0.011 240);
+  --color-text: oklch(94% 0.004 240);
+  --color-text-muted: oklch(74% 0.008 240);
+  --color-text-faint: oklch(56% 0.008 240);
+
+  --color-accent: oklch(74% 0.13 220);
+  --color-accent-strong: oklch(82% 0.11 220);
+  --color-accent-contrast: oklch(14% 0.01 240);
+
+  --color-signal-allow: oklch(74% 0.15 155);
+  --color-signal-allow-bg: oklch(28% 0.05 155);
+  --color-signal-review: oklch(78% 0.15 75);
+  --color-signal-review-bg: oklch(30% 0.06 65);
+  --color-signal-block: oklch(70% 0.18 25);
+  --color-signal-block-bg: oklch(30% 0.07 25);
+  --color-signal-degraded: oklch(76% 0.1 290);
+  --color-signal-degraded-bg: oklch(28% 0.05 290);
+
+  --color-focus-ring: oklch(78% 0.12 220);
+}
+
+/* System light, no explicit user choice. Guarded against an explicit dark choice so the
+ * (enhancement-pass) toggle can force dark even on a light-preferring system. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --color-bg: oklch(98% 0.003 240);
+    --color-surface: oklch(100% 0 0);
+    --color-surface-raised: oklch(97% 0.004 240);
+    --color-border: oklch(88% 0.005 240);
+    --color-border-strong: oklch(78% 0.008 240);
+    --color-text: oklch(20% 0.01 240);
+    --color-text-muted: oklch(42% 0.012 240);
+    --color-text-faint: oklch(58% 0.01 240);
+
+    --color-accent: oklch(52% 0.16 240);
+    --color-accent-strong: oklch(44% 0.17 240);
+    --color-accent-contrast: oklch(99% 0.005 240);
+
+    --color-signal-allow: oklch(52% 0.14 155);
+    --color-signal-allow-bg: oklch(94% 0.04 155);
+    --color-signal-review: oklch(58% 0.16 65);
+    --color-signal-review-bg: oklch(93% 0.06 65);
+    --color-signal-block: oklch(52% 0.19 25);
+    --color-signal-block-bg: oklch(93% 0.05 25);
+    --color-signal-degraded: oklch(56% 0.13 290);
+    --color-signal-degraded-bg: oklch(93% 0.03 290);
+
+    --color-focus-ring: oklch(52% 0.16 240);
+  }
+}
+
+/* Explicit user choice, via the (enhancement-pass) toggle. Wins over system preference in
+ * both directions: this block for an explicit light choice, and dark needs no equivalent
+ * block because dark already IS the unconditional @theme default above -- forcing dark just
+ * means the toggle removes data-theme="light" rather than adding data-theme="dark". */
+:root[data-theme='light'] {
+  --color-bg: oklch(98% 0.003 240);
+  --color-surface: oklch(100% 0 0);
+  --color-surface-raised: oklch(97% 0.004 240);
+  --color-border: oklch(88% 0.005 240);
+  --color-border-strong: oklch(78% 0.008 240);
+  --color-text: oklch(20% 0.01 240);
+  --color-text-muted: oklch(42% 0.012 240);
+  --color-text-faint: oklch(58% 0.01 240);
+
+  --color-accent: oklch(52% 0.16 240);
+  --color-accent-strong: oklch(44% 0.17 240);
+  --color-accent-contrast: oklch(99% 0.005 240);
+
+  --color-signal-allow: oklch(52% 0.14 155);
+  --color-signal-allow-bg: oklch(94% 0.04 155);
+  --color-signal-review: oklch(58% 0.16 65);
+  --color-signal-review-bg: oklch(93% 0.06 65);
+  --color-signal-block: oklch(52% 0.19 25);
+  --color-signal-block-bg: oklch(93% 0.05 25);
+  --color-signal-degraded: oklch(56% 0.13 290);
+  --color-signal-degraded-bg: oklch(93% 0.03 290);
+
+  --color-focus-ring: oklch(52% 0.16 240);
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    /* Dark first, matching the @theme default -- hints native form-control and scrollbar
+     * colours toward dark before either media query or the toggle attribute is evaluated. */
+    color-scheme: dark light;
   }
 
   body {
     margin: 0;
     min-height: 100dvh;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+  }
+
+  /* Tabular figures everywhere numbers appear, not just where .font-mono is applied --
+   * a stray <td> of amounts that forgot the class should still align. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One visible focus treatment, applied uniformly, rather than relying on each browser's own
+   * (inconsistent, sometimes near-invisible) default outline. :focus-visible so a mouse click
+   * doesn't leave a ring behind, only keyboard/AT navigation does. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-console);
   }
 
   @media (prefers-reduced-motion: reduce) {

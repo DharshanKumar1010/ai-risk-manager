@@ -45,6 +45,7 @@ from app.models.tier3_graph import (
     benchmark_latency,
     build_score_table,
     detect_communities,
+    export_ring_edges,
     feature_names_for,
     fit_ring_scorer,
     flag_rings,
@@ -52,6 +53,15 @@ from app.models.tier3_graph import (
 )
 
 EPOCH = datetime(2017, 1, 1, tzinfo=UTC)
+
+#: Not a secret: it signs nothing that exists outside the test process. See
+#: tests/conftest.py's TEST_SIGNING_KEY for the same reasoning applied to the JWT key.
+TEST_ENTITY_ANONYMIZATION_KEY = b"test-only-entity-anonymization-key-not-a-real-secret"
+
+#: `ieee_rows` defaults every fingerprint spec's columns to the same constant across rows, so a
+#: fixture wanting exactly one shared entity (rather than one per matching spec: card_fp,
+#: device_fp, email_dist all firing at once) has to narrow the graph to a single spec.
+DEVICE_ONLY_SPEC = tuple(spec for spec in IEEE_FINGERPRINTS if spec.name == "device_fp")
 
 
 def paysim_rows(rows: list[dict[str, object]]) -> pd.DataFrame:
@@ -589,6 +599,41 @@ def test_saved_artifact_is_plain_json_not_a_pickle(tmp_path: Path) -> None:
     assert restored.threshold == model.threshold
 
 
+def test_ring_topology_survives_a_save_and_load_round_trip(tmp_path: Path) -> None:
+    """Phase 8's network view reads `ring_nodes`/`ring_edges` off a loaded artifact."""
+    from app.models.tier3_graph import RingGraphEdge, RingGraphNode
+
+    model = fitted_model(chain_frame())
+    ring_id = next(iter(model.ring_of.values()))
+    with_topology = replace(
+        model,
+        ring_nodes={ring_id: (RingGraphNode(node_id="victim", kind="account"),)},
+        ring_edges={ring_id: (RingGraphEdge(source="victim", target="muleA"),)},
+    )
+
+    with_topology.save(tmp_path)
+    restored = Tier3Model.load(with_topology.model_id, tmp_path)
+
+    assert restored.ring_nodes == with_topology.ring_nodes
+    assert restored.ring_edges == with_topology.ring_edges
+
+
+def test_an_artifact_saved_before_phase_8_loads_with_empty_topology(tmp_path: Path) -> None:
+    """A registered artifact from before `ring_nodes`/`ring_edges` existed must still load."""
+    import json
+
+    model = fitted_model(chain_frame())
+    path = model.save(tmp_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload["ring_nodes"]
+    del payload["ring_edges"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    restored = Tier3Model.load(model.model_id, tmp_path)
+    assert restored.ring_nodes == {}
+    assert restored.ring_edges == {}
+
+
 # --- The structural-only invariant -------------------------------------------------------
 
 
@@ -701,6 +746,185 @@ def test_ring_size_counts_accounts_not_entity_nodes() -> None:
     assert not features.empty
     assert set(features["ring_size"].unique()) == {3.0}
     assert (features["ring_entity_count"] > 0).all()
+
+
+# --- Ring topology export (Phase 8 network view) ------------------------------------------
+
+
+def test_export_ring_edges_hashes_entity_ids_and_never_leaks_the_raw_fingerprint() -> None:
+    """The Phase 8 spec's non-negotiable: an entity node id is never the raw composite key."""
+    frame = ieee_rows(
+        [
+            {"account_id": f"a{index}", "DeviceInfo": "very-secret-device", "id_31": "shared"}
+            for index in range(3)
+        ]
+    )
+    graph = IEEECISSharedEntityGraph(max_entity_degree=DEFAULT_MAX_ENTITY_DEGREE)
+    graph.insert(frame)
+    snapshot = graph.snapshot((frame["event_time"].max() + timedelta(seconds=1)).to_pydatetime())
+    communities = detect_communities(snapshot)  # type: ignore[arg-type]
+    topology = export_ring_edges(snapshot, communities, key=TEST_ENTITY_ANONYMIZATION_KEY)  # type: ignore[arg-type]
+
+    assert topology, "no ring topology was exported for a fixture built to contain one"
+    nodes, edges = next(iter(topology.values()))
+    entity_nodes = [node for node in nodes if node.kind == "entity"]
+    account_nodes = [node for node in nodes if node.kind == "account"]
+
+    assert entity_nodes, "no entity node was exported on a bipartite fixture"
+    assert {node.node_id for node in account_nodes} == {"a0", "a1", "a2"}
+    for node in entity_nodes:
+        assert "very-secret-device" not in node.node_id
+        assert "shared" not in node.node_id
+        assert len(node.node_id) == 16, "the exported id must be the truncated hash, not the key"
+        assert node.entity_type, "an entity node must carry which fingerprint spec produced it"
+
+    node_ids = {node.node_id for node in nodes}
+    for edge in edges:
+        assert edge.source in node_ids
+        assert edge.target in node_ids
+
+
+def test_export_ring_edges_hashing_is_deterministic_and_collision_free_within_a_ring() -> None:
+    """The same raw entity must anonymize to the same id everywhere it appears in one export."""
+    frame = ieee_rows(
+        [
+            {"account_id": f"a{index}", "DeviceInfo": "device-x", "id_31": "shared"}
+            for index in range(4)
+        ]
+    )
+    graph = IEEECISSharedEntityGraph(
+        specs=DEVICE_ONLY_SPEC, max_entity_degree=DEFAULT_MAX_ENTITY_DEGREE
+    )
+    graph.insert(frame)
+    snapshot = graph.snapshot((frame["event_time"].max() + timedelta(seconds=1)).to_pydatetime())
+    communities = detect_communities(snapshot)  # type: ignore[arg-type]
+    topology = export_ring_edges(snapshot, communities, key=TEST_ENTITY_ANONYMIZATION_KEY)  # type: ignore[arg-type]
+
+    nodes, edges = next(iter(topology.values()))
+    entity_ids = {node.node_id for node in nodes if node.kind == "entity"}
+    assert len(entity_ids) == 1, "one shared device must anonymize to exactly one node id"
+    entity_id = next(iter(entity_ids))
+    assert sum(1 for edge in edges if entity_id in (edge.source, edge.target)) == 4
+
+
+def test_export_ring_edges_ring_ids_match_ring_feature_frames() -> None:
+    """The exported ring ids must line up with `ring_feature_frame`'s, both `f"r{index}"`."""
+    frame = ieee_rows(
+        [
+            {"account_id": f"a{index}", "DeviceInfo": "shared", "id_31": "shared"}
+            for index in range(3)
+        ]
+    )
+    graph = IEEECISSharedEntityGraph(max_entity_degree=DEFAULT_MAX_ENTITY_DEGREE)
+    graph.insert(frame)
+    snapshot = graph.snapshot((frame["event_time"].max() + timedelta(seconds=1)).to_pydatetime())
+    communities = detect_communities(snapshot)  # type: ignore[arg-type]
+    features = ring_feature_frame(snapshot, communities)  # type: ignore[arg-type]
+    topology = export_ring_edges(snapshot, communities, key=TEST_ENTITY_ANONYMIZATION_KEY)  # type: ignore[arg-type]
+
+    assert set(features["ring_id"].unique()) == set(topology)
+
+
+def test_export_ring_edges_on_a_paysim_chain_has_account_edges_and_no_entities() -> None:
+    """PaySim carries chain edges between accounts, never an entity node -- the mirror case."""
+    frame = chain_frame()
+    snapshot = snapshot_of(frame)
+    communities = detect_communities(snapshot)  # type: ignore[arg-type]
+    topology = export_ring_edges(snapshot, communities, key=TEST_ENTITY_ANONYMIZATION_KEY)  # type: ignore[arg-type]
+
+    assert topology, "no ring topology was exported for a fixture built to contain a chain"
+    for nodes, edges in topology.values():
+        assert all(node.kind == "account" for node in nodes)
+        assert edges, "a PaySim ring with no edges at all is not a ring"
+
+
+def test_export_ring_edges_excludes_edges_reaching_outside_the_community() -> None:
+    """An entity shared with an account outside this ring belongs to a different ring's picture."""
+    frame = ieee_rows(
+        [
+            {"account_id": f"a{index}", "DeviceInfo": "shared", "id_31": "shared"}
+            for index in range(3)
+        ]
+        + [{"account_id": "outsider", "DeviceInfo": "unrelated", "id_31": "unrelated"}]
+    )
+    graph = IEEECISSharedEntityGraph(
+        specs=DEVICE_ONLY_SPEC, max_entity_degree=DEFAULT_MAX_ENTITY_DEGREE
+    )
+    graph.insert(frame)
+    snapshot = graph.snapshot((frame["event_time"].max() + timedelta(seconds=1)).to_pydatetime())
+    communities = detect_communities(snapshot)  # type: ignore[arg-type]
+    topology = export_ring_edges(snapshot, communities, key=TEST_ENTITY_ANONYMIZATION_KEY)  # type: ignore[arg-type]
+
+    all_node_ids = {node.node_id for nodes, _edges in topology.values() for node in nodes}
+    assert "outsider" not in all_node_ids
+
+
+def test_entity_ids_change_with_the_key_and_do_not_match_an_unkeyed_hash() -> None:
+    """The actual security-review fix: an unkeyed hash over IEEE-CIS's small, public
+    fingerprint domain is a dictionary attack away from the raw card/device fingerprint --
+    keying it with a deployment secret is what makes the mapping non-reversible.
+    """
+    import hashlib
+
+    frame = ieee_rows(
+        [
+            {"account_id": f"a{index}", "DeviceInfo": "shared", "id_31": "shared"}
+            for index in range(3)
+        ]
+    )
+    graph = IEEECISSharedEntityGraph(
+        specs=DEVICE_ONLY_SPEC, max_entity_degree=DEFAULT_MAX_ENTITY_DEGREE
+    )
+    graph.insert(frame)
+    snapshot = graph.snapshot((frame["event_time"].max() + timedelta(seconds=1)).to_pydatetime())
+    communities = detect_communities(snapshot)  # type: ignore[arg-type]
+
+    first = export_ring_edges(snapshot, communities, key=b"key-one")  # type: ignore[arg-type]
+    second = export_ring_edges(snapshot, communities, key=b"key-two")  # type: ignore[arg-type]
+
+    entity_id_one = next(
+        node.node_id for nodes, _edges in first.values() for node in nodes if node.kind == "entity"
+    )
+    entity_id_two = next(
+        node.node_id for nodes, _edges in second.values() for node in nodes if node.kind == "entity"
+    )
+    assert entity_id_one != entity_id_two, "two different keys must not anonymize to the same id"
+
+    # The raw fingerprint the entity node was built from -- read directly off the graph rather
+    # than reconstructed by hand, so this assertion does not depend on independently guessing
+    # fingerprint_keys's exact join format. An attacker holding the public IEEE-CIS corpus can
+    # build this same candidate exactly as cheaply as this test just did.
+    raw_entity = next(
+        str(node)
+        for node in snapshot.graph.nodes  # type: ignore[attr-defined]
+        if snapshot.graph.nodes[node].get("kind") == "entity"  # type: ignore[attr-defined]
+    )
+    unkeyed = hashlib.sha256(raw_entity.encode("utf-8")).hexdigest()[:16]
+    assert (
+        entity_id_one != unkeyed
+    ), "the keyed id must not degrade to the plain SHA-256 anyone can compute"
+
+
+def test_entity_ids_are_stable_for_the_same_key_and_entity() -> None:
+    """Same key, same raw entity, same node id -- required so one ring's nodes can be joined
+    against another export from the same deployment (the same key), not just internally
+    consistent within a single export_ring_edges call."""
+    frame = ieee_rows(
+        [
+            {"account_id": f"a{index}", "DeviceInfo": "shared", "id_31": "shared"}
+            for index in range(3)
+        ]
+    )
+    graph = IEEECISSharedEntityGraph(
+        specs=DEVICE_ONLY_SPEC, max_entity_degree=DEFAULT_MAX_ENTITY_DEGREE
+    )
+    graph.insert(frame)
+    snapshot = graph.snapshot((frame["event_time"].max() + timedelta(seconds=1)).to_pydatetime())
+    communities = detect_communities(snapshot)  # type: ignore[arg-type]
+
+    first = export_ring_edges(snapshot, communities, key=TEST_ENTITY_ANONYMIZATION_KEY)  # type: ignore[arg-type]
+    second = export_ring_edges(snapshot, communities, key=TEST_ENTITY_ANONYMIZATION_KEY)  # type: ignore[arg-type]
+    assert first == second
 
 
 def test_a_fingerprint_with_a_missing_component_produces_no_key() -> None:
@@ -943,7 +1167,13 @@ def test_a_leak_suspicious_result_carries_its_caveat_into_the_registry(
 
     report = run_small_corpus(corpus_frame())
     report.ring_test = result
-    model = driver.build_served_model(report, "tier3-graph-louvain-paysim-caveat-test")
+    model = driver.build_served_model(
+        report,
+        "tier3-graph-louvain-paysim-caveat-test",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     registry = tmp_path / "registry.json"
     registry.write_text("[]", encoding="utf-8")
 
@@ -1100,13 +1330,25 @@ def test_registry_feature_version_is_stable_across_thresholds(
     baseline_report: driver.CorpusReport, tmp_path: Path
 ) -> None:
     """Two models over identical graphs must carry the same `gv_` hash."""
-    model = driver.build_served_model(baseline_report, "tier3-graph-louvain-paysim-fv-a")
+    model = driver.build_served_model(
+        baseline_report,
+        "tier3-graph-louvain-paysim-fv-a",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     registry = tmp_path / "registry.json"
     registry.write_text("[]", encoding="utf-8")
     first = driver.register(baseline_report, model, registry, tmp_path)
 
     shifted = replace(baseline_report, threshold=baseline_report.threshold * 0.5 + 0.1)
-    other = driver.build_served_model(shifted, "tier3-graph-louvain-paysim-fv-b")
+    other = driver.build_served_model(
+        shifted,
+        "tier3-graph-louvain-paysim-fv-b",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     second = driver.register(shifted, other, registry, tmp_path)
 
     assert first.feature_version == second.feature_version
@@ -1119,7 +1361,13 @@ def test_training_window_describes_the_train_split_only(
     baseline_report: driver.CorpusReport, tmp_path: Path
 ) -> None:
     """An auditor tracing a prediction must not read a window that includes held-out data."""
-    model = driver.build_served_model(baseline_report, "tier3-graph-louvain-paysim-window")
+    model = driver.build_served_model(
+        baseline_report,
+        "tier3-graph-louvain-paysim-window",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     registry = tmp_path / "registry.json"
     registry.write_text("[]", encoding="utf-8")
     entry = driver.register(baseline_report, model, registry, tmp_path)
@@ -1159,7 +1407,13 @@ def test_a_below_no_skill_headline_carries_a_caveat_into_the_registry(
     assert weak.lift_over_no_skill < 1.0, "fixture must be below no-skill to test the caveat"
 
     report = replace(baseline_report, ring_test=weak)
-    model = driver.build_served_model(report, "tier3-graph-louvain-paysim-weak")
+    model = driver.build_served_model(
+        report,
+        "tier3-graph-louvain-paysim-weak",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     registry = tmp_path / "registry.json"
     registry.write_text("[]", encoding="utf-8")
     entry = driver.register(report, model, registry, tmp_path)
@@ -1176,7 +1430,13 @@ def test_a_negative_fusion_delta_carries_a_caveat_into_the_registry(
         fused_pr_auc=0.5245,
         fused_delta=(-0.003084, -0.003756, -0.002469),
     )
-    model = driver.build_served_model(report, "tier3-graph-louvain-paysim-fusion")
+    model = driver.build_served_model(
+        report,
+        "tier3-graph-louvain-paysim-fusion",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     registry = tmp_path / "registry.json"
     registry.write_text("[]", encoding="utf-8")
     entry = driver.register(report, model, registry, tmp_path)
@@ -1196,7 +1456,13 @@ def test_offline_and_served_score_tables_agree(
     latest = account_rings["snapshot_end"].max()
     current = account_rings.loc[account_rings["snapshot_end"] == latest]
 
-    model = driver.build_served_model(baseline_report, "tier3-graph-louvain-paysim-agree")
+    model = driver.build_served_model(
+        baseline_report,
+        "tier3-graph-louvain-paysim-agree",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     offline = current.groupby("account_id")["ring_risk_score"].max().to_dict()
 
     assert set(model.scores) == {str(k) for k in offline}
@@ -1207,7 +1473,13 @@ def test_offline_and_served_score_tables_agree(
 def test_latency_benchmark_reports_the_tail(baseline_report: driver.CorpusReport) -> None:
     """p99 is the figure that decides whether Phase 7's Tier-3 timeout is implementable, and
     `models/README.md` names it as part of a complete entry."""
-    model = driver.build_served_model(baseline_report, "tier3-graph-louvain-paysim-latency")
+    model = driver.build_served_model(
+        baseline_report,
+        "tier3-graph-louvain-paysim-latency",
+        corpus_frame(),
+        driver.paysim_factory(0, 0.0),
+        entity_anonymization_key=TEST_ENTITY_ANONYMIZATION_KEY,
+    )
     account = next(iter(model.scores))
     measured = benchmark_latency(model, [transaction(account)], calls=20)
     assert {"p50_ms", "p95_ms", "p99_ms", "mean_ms", "max_ms"} <= set(measured)

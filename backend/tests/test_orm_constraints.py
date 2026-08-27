@@ -100,6 +100,7 @@ class TestMigrationMatchesTheOrm:
         assert sorted(path.name for path in MIGRATION_DIR.glob("*.py")) == [
             "0001_core_tables.py",
             "0002_audit_log.py",
+            "0003_analyst_session_role.py",
         ]
 
     @pytest.mark.parametrize("table", RLS_TABLES)
@@ -205,6 +206,47 @@ class TestRowLevelSecurity:
         for grant in granted:
             verbs = {verb.strip() for verb in grant.split(",")}
             assert verbs == {"SELECT"}, f"riskiq_analyst is granted {verbs}, not SELECT alone"
+
+
+class TestAnalystRoleIsAssumableWithoutWideningEveryMerchantSession:
+    """Phase 8: `riskiq_app` gains membership in `riskiq_analyst`.
+
+    Regression cover for the single most dangerous line revision 0003 could contain. Postgres
+    resolves an RLS policy's `TO role` list by role membership; a plain `GRANT riskiq_analyst
+    TO riskiq_app` (default `INHERIT`) would make the `USING (true)` analyst policies apply to
+    every `riskiq_app` session unconditionally, silently disabling account isolation for every
+    merchant token while every policy definition still reads as correct.
+    """
+
+    def test_membership_does_not_inherit(self, migration_sql: str) -> None:
+        assert "GRANT riskiq_analyst TO riskiq_app WITH INHERIT FALSE" in migration_sql
+
+    def test_no_plain_membership_grant_exists_as_an_executable_statement(
+        self, migration_sql: str
+    ) -> None:
+        """A bare `GRANT riskiq_analyst TO riskiq_app` with no qualifier must never appear.
+
+        Anchored on the opening quote so this matches only a Python string literal -- one of
+        the tuple entries a migration actually executes -- and not the module docstring, which
+        necessarily quotes the dangerous bare form verbatim to explain why it is refused.
+        """
+        assert not re.search(
+            r'"GRANT riskiq_analyst TO riskiq_app(?! WITH INHERIT FALSE)', migration_sql
+        )
+
+    def test_analyst_policies_require_the_role_to_actually_be_assumed(
+        self, migration_sql: str
+    ) -> None:
+        """Belt and braces: the predicate holds even if INHERIT FALSE is not respected the way
+        this migration's docstring expects it to be.
+        """
+        for table in ("audit_log", "transactions", "accounts"):
+            assert re.search(
+                rf"CREATE POLICY {table}_analyst_read_all ON {table}\s+"
+                rf"FOR SELECT TO riskiq_analyst\s+"
+                rf"USING \(current_user = 'riskiq_analyst'\)",
+                migration_sql,
+            ), f"{table}'s analyst policy is missing the current_user predicate"
 
 
 class TestAuditLogIsAppendOnly:

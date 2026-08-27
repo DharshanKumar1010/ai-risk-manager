@@ -55,6 +55,8 @@ this layer has no opinion on, which is the rule Tier-1 states as *a missing feat
 error, not a zero* and Tier-2 repeats for short sequences.
 """
 
+import hashlib
+import hmac
 import json
 import time
 from abc import ABC, abstractmethod
@@ -533,6 +535,123 @@ class RingFlag(BaseModel):
     )
 
 
+class RingGraphNode(BaseModel):
+    """One node of a flagged ring's topology, as exported for the Phase 8 network view.
+
+    An account node's ``node_id`` is the plain ``account_id`` -- already exposed by
+    ``RingResponse.members``, so hashing it here would just be a second encoding of a value the
+    same response already carries in the clear. An entity node's ``node_id`` is never the raw
+    composite fingerprint (a ``card1``/``card4``/... tuple, or worse a device fingerprint):
+    :func:`export_ring_edges` hashes it, because the fingerprint itself is exactly the kind of
+    device/card signal :mod:`app.models.tier3_edges` builds from raw identity columns that no
+    other response on this API returns.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    node_id: str
+    kind: str = Field(description="'account' or 'entity'.")
+    entity_type: str | None = Field(
+        default=None,
+        description="The fingerprint spec name (e.g. 'card1_card4'). None for account nodes.",
+    )
+
+
+class RingGraphEdge(BaseModel):
+    """One edge of a flagged ring's topology: an account-account or account-entity incidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: str = Field(description="A RingGraphNode.node_id.")
+    target: str = Field(description="A RingGraphNode.node_id.")
+
+
+def _anonymized_entity_id(entity: str, key: bytes) -> str:
+    """Hash a raw entity fingerprint down to an opaque node id, keyed so it cannot be reversed.
+
+    **Keyed, not merely hashed -- found in security review, not designed in up front.** An
+    IEEE-CIS shared-entity fingerprint (``card_fp:13926|321.0|226.0|299.0``, say) is built from
+    a handful of columns each drawn from a small, public domain: ``card1`` has on the order of
+    13,000 distinct values in the corpus, ``card2``/``card5``/``addr1`` far fewer, and the
+    device columns (``DeviceInfo``, ``id_30``, ``id_31``, ``id_33``) are in the low hundreds
+    each. That is a candidate space in the thousands to low millions -- trivial to enumerate
+    offline against a plain ``sha256(entity)``, so an unkeyed hash is not an anonymization at
+    all, just a fixed-width re-encoding a dictionary attack undoes in seconds. Truncating to 16
+    hex characters helps against a *collision* (two distinct entities landing on the same id,
+    genuinely unlikely at these ring sizes) but does nothing against a *preimage* search over a
+    known, small candidate set, which is the actual threat here.
+
+    ``key`` -- ``Settings.entity_anonymization_key``, deployment-specific and never persisted
+    into a :class:`Tier3Model` artifact or ``models/registry.json`` -- is what makes the
+    mapping non-reversible without it: HMAC-SHA256 is a pseudorandom function, so a candidate
+    fingerprint's hash no longer matches its plaintext hash from outside this process, and only
+    someone holding the key can reproduce the mapping either forward (to check a guess) or
+    build the dictionary in the first place. Still 16 hex characters, for the same
+    collision-resistance reasoning as before.
+    """
+    return hmac.new(key, entity.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
+def export_ring_edges(
+    snapshot: GraphSnapshot, communities: Sequence[Sequence[str]], *, key: bytes
+) -> dict[str, tuple[tuple[RingGraphNode, ...], tuple[RingGraphEdge, ...]]]:
+    """Return each community's topology as anonymized nodes and edges, keyed by ring id.
+
+    Ring ids match :func:`ring_feature_frame`'s ``f"r{index}"`` over the same ``communities``
+    list -- both are a plain ``enumerate``, so calling this with the exact communities
+    :func:`detect_communities` produced for one snapshot reproduces the same ids that
+    snapshot's served :class:`Tier3Model` uses for ``ring_of``/``ring_sizes``.
+
+    Walks each community the same way :func:`ring_feature_frame` does: an account-account edge
+    within the community (PaySim's inferred chain links), or an account-entity edge onto a
+    shared fingerprint (IEEE-CIS's bipartite graph). Only edges with both endpoints inside the
+    community are kept -- an entity shared with an account outside this ring is real structure
+    but belongs to a different ring's picture, not this one's.
+
+    ``key`` is ``Settings.entity_anonymization_key`` (UTF-8 encoded by the caller) and is
+    threaded straight into :func:`_anonymized_entity_id` -- see that function's docstring for
+    why an unkeyed hash here would not actually anonymize anything.
+    """
+    adjacency = snapshot.graph.adj
+    node_attributes = snapshot.graph.nodes
+    result: dict[str, tuple[tuple[RingGraphNode, ...], tuple[RingGraphEdge, ...]]] = {}
+
+    for index, members in enumerate(communities):
+        member_set = set(members)
+        nodes: dict[str, RingGraphNode] = {
+            account: RingGraphNode(node_id=account, kind="account") for account in members
+        }
+        edges: list[RingGraphEdge] = []
+        seen_pairs: set[tuple[str, str]] = set()
+
+        for account in members:
+            for neighbour, _data in adjacency[account].items():
+                neighbour = str(neighbour)
+                is_entity = node_attributes[neighbour].get("kind", "account") == "entity"
+                if is_entity:
+                    anon = _anonymized_entity_id(neighbour, key)
+                    nodes.setdefault(
+                        anon,
+                        RingGraphNode(
+                            node_id=anon,
+                            kind="entity",
+                            entity_type=str(node_attributes[neighbour].get("spec", "")),
+                        ),
+                    )
+                    pair = (account, anon)
+                elif neighbour in member_set:
+                    pair = (account, neighbour) if account < neighbour else (neighbour, account)
+                else:
+                    continue
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                edges.append(RingGraphEdge(source=pair[0], target=pair[1]))
+
+        result[f"r{index}"] = (tuple(nodes.values()), tuple(edges))
+    return result
+
+
 class Tier3Result(BaseModel):
     """One Tier-3 decision, as returned to the caller and recorded by the audit trail.
 
@@ -932,6 +1051,14 @@ class Tier3Model:
     seen_accounts: frozenset[str] = frozenset()
     scorer: RingScorer | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
+    #: Per-ring topology for the Phase 8 network view, keyed by the same ring id as
+    #: ``ring_of``/``ring_sizes``. Populated by :func:`export_ring_edges` at training time --
+    #: see that function's docstring for why entity nodes are hashed here and never reconstructed
+    #: at serving time, and ``train_tier3.py``'s ``build_served_model`` for why this is the
+    #: *latest* snapshot's topology specifically. Empty for artifacts trained before Phase 8,
+    #: which ``load`` tolerates rather than requires re-training every registered model.
+    ring_nodes: dict[str, tuple[RingGraphNode, ...]] = field(default_factory=dict)
+    ring_edges: dict[str, tuple[RingGraphEdge, ...]] = field(default_factory=dict)
 
     def score(self, transaction: TransactionFeatures) -> Tier3Result:
         """Return the ring risk for one transaction's account, or an abstention.
@@ -999,6 +1126,14 @@ class Tier3Model:
             "ring_sizes": self.ring_sizes,
             "seen_accounts": sorted(self.seen_accounts),
             "parameters": self.parameters,
+            "ring_nodes": {
+                ring_id: [node.model_dump(mode="json") for node in nodes]
+                for ring_id, nodes in self.ring_nodes.items()
+            },
+            "ring_edges": {
+                ring_id: [edge.model_dump(mode="json") for edge in edges]
+                for ring_id, edges in self.ring_edges.items()
+            },
         }
         path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         return path
@@ -1023,6 +1158,14 @@ class Tier3Model:
             snapshot_end=datetime.fromisoformat(str(payload["snapshot_end"])),
             seen_accounts=frozenset(str(a) for a in payload.get("seen_accounts", [])),
             parameters=dict(payload.get("parameters", {})),
+            ring_nodes={
+                str(ring_id): tuple(RingGraphNode.model_validate(node) for node in nodes)
+                for ring_id, nodes in payload.get("ring_nodes", {}).items()
+            },
+            ring_edges={
+                str(ring_id): tuple(RingGraphEdge.model_validate(edge) for edge in edges)
+                for ring_id, edges in payload.get("ring_edges", {}).items()
+            },
         )
 
 

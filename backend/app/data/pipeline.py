@@ -357,7 +357,9 @@ async def write_postgres(processed: ProcessedSource, settings: Settings) -> tupl
     Returns:
         ``(transaction_rows, account_rows)`` written.
     """
-    connection = await asyncpg.connect(_asyncpg_dsn(settings.database_url))
+    # riskiq_pipeline, not riskiq_app: the application role holds SELECT only on these two
+    # tables (security-checklist section 3), and a bulk COPY needs the read-write role.
+    connection = await asyncpg.connect(_asyncpg_dsn(settings.pipeline_url))
     try:
         async with connection.transaction():
             await connection.execute(

@@ -16,8 +16,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import ScoreRequest, ScoreResponse
+from app.api.schemas import FeedEvent, ScoreRequest, ScoreResponse
 from app.core.audit import write_audit_record
+from app.core.feed import FeedBroadcaster
 from app.core.rate_limit import enforce_rate_limit
 from app.core.security import (
     SCOPE_SCORE,
@@ -122,6 +123,27 @@ async def score(
 
     audit_id = await write_audit_record(session, record)
     await session.commit()
+
+    # Published strictly after commit succeeds, never before. The audit trail's whole ordering
+    # discipline exists to prevent a decision existing without its record; publishing earlier
+    # would show a decision on the live feed that could still roll back. A missing or
+    # unavailable broadcaster (most tests, and any deployment that has not wired one) is not a
+    # scoring failure -- the feed is an enrichment of the response, not a precondition for it.
+    broadcaster: FeedBroadcaster | None = getattr(request.app.state, "feed_broadcaster", None)
+    if broadcaster is not None:
+        broadcaster.publish(
+            FeedEvent(
+                audit_id=audit_id,
+                transaction_id=payload.transaction_id,
+                account_id=payload.account_id,
+                decided_at=record.decided_at,
+                decision=outcome.decision,
+                risk_probability=outcome.probability,
+                amount=str(payload.amount),
+                degraded=outcome.degraded,
+                model_version=outcome.model_versions["tier1"],
+            ).model_dump(mode="json")
+        )
 
     return ScoreResponse(
         transaction_id=payload.transaction_id,

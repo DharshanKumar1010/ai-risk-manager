@@ -162,6 +162,61 @@ def decode_access_token(token: str, settings: Settings | None = None) -> Princip
     )
 
 
+def mint_ws_ticket(principal: Principal, settings: Settings) -> str:
+    """Mint a short-lived, audience-scoped ticket authenticating one websocket connection.
+
+    Browsers cannot set a header on a WebSocket handshake, so a normal bearer token would have
+    to travel in the URL query string -- and a full-privilege, hour-long credential in a query
+    string lands in uvicorn's access log, any reverse proxy's request log, and browser history.
+
+    The fix is not a different transport for the same token; it is a token that is safe to log.
+    ``mint_ws_ticket`` reuses :func:`create_access_token` under a settings copy with the
+    audience swapped to ``jwt_ws_audience`` and the expiry shortened to
+    ``ws_ticket_expiry_seconds`` (default 30s). :func:`decode_access_token` pins the audience
+    it accepts, so this ticket fails verification against every REST route -- the one thing it
+    can authenticate is the websocket connection it was minted for, and only within the next
+    thirty seconds. That asymmetry is what makes a leaked ticket low-value; nothing about the
+    scopes or account it carries is narrowed, because the audience restriction already does
+    the job a scope restriction would otherwise have to.
+
+    Args:
+        principal: The already-verified caller the ticket is minted for -- same subject,
+            account and scopes carry through unchanged.
+        settings: Configuration this ticket is signed and scoped under.
+
+    Returns:
+        The encoded ticket.
+    """
+    ticket_settings = settings.model_copy(
+        update={
+            "jwt_audience": settings.jwt_ws_audience,
+            "jwt_expiry_seconds": settings.ws_ticket_expiry_seconds,
+        }
+    )
+    return create_access_token(
+        subject=principal.subject,
+        account_id=principal.account_id,
+        scopes=principal.scopes,
+        settings=ticket_settings,
+    )
+
+
+def decode_ws_ticket(ticket: str, settings: Settings) -> Principal:
+    """Verify a websocket ticket and return the principal it represents.
+
+    A thin wrapper over :func:`decode_access_token` under the ``jwt_ws_audience`` settings
+    copy -- the mirror of :func:`mint_ws_ticket`. A caller presenting an ordinary bearer token
+    here fails verification (wrong audience), and a ticket presented to a REST route fails
+    there for the same reason in reverse.
+
+    Raises:
+        HTTPException: 401 if the ticket is missing, malformed, expired, or carries the wrong
+            audience.
+    """
+    ticket_settings = settings.model_copy(update={"jwt_audience": settings.jwt_ws_audience})
+    return decode_access_token(ticket, ticket_settings)
+
+
 async def get_current_principal(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
