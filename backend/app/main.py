@@ -125,10 +125,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # in every deployed environment, not only local/ci.
     application.include_router(webhooks.router)
 
-    if cfg.environment in ("local", "ci"):
+    if cfg.environment in ("local", "ci") or cfg.demo_mode:
         # Registered conditionally, not gated inside the handler -- see auth.py's module
-        # docstring for why. Outside local/ci the path does not exist at all: it 404s like
-        # any unrouted path, and never appears in /openapi.json.
+        # docstring for why. With demo_mode off and outside local/ci the path does not exist
+        # at all: it 404s like any unrouted path, and never appears in /openapi.json.
+        # `demo_mode` (see Settings.demo_mode) is a second, independent OR-condition for a
+        # judged demo window -- it does not change what `environment in ("staging",
+        # "production")` gates anywhere else in this file or in config.py.
+        if cfg.environment not in ("local", "ci"):
+            # Visible signal that a security-relevant mode is active outside local/ci -- see
+            # Settings.demo_mode for why this must not be a silent flip.
+            logger.warning(
+                "demo_mode is enabled in environment=%r: POST /auth/demo-token is mounted "
+                "and reachable by any caller, restricted to merchant persona and "
+                "demo_account_ids=%r",
+                cfg.environment,
+                cfg.demo_account_ids,
+            )
         application.include_router(auth.router)
 
     return application

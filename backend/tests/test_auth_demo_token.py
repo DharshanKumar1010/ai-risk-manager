@@ -56,6 +56,144 @@ class TestRouterMounting:
         assert response.status_code != 404
 
 
+def _deployed_settings(environment: str, **overrides: object) -> Settings:
+    """Settings for a staging/production Settings() construction, with test-only secrets."""
+    return Settings(
+        environment=environment,  # type: ignore[arg-type]
+        jwt_secret_key="a-deployed-signing-key-of-sufficient-length-here",
+        entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+        razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+        **overrides,  # type: ignore[arg-type]
+    )
+
+
+class TestDemoModeOverride:
+    """`demo_mode` is a second, independent way to mount the router -- see Settings.demo_mode.
+    It must not change what the `environment` check gates for anything else, so every test
+    here pins environment to staging/production and varies demo_mode alone.
+
+    A security review of the first version of this flag found it granted the full local/ci
+    persona set -- including 'analyst', which reaches explain:read/rings:read -- to an
+    anonymous internet caller, reassembling the explain-oracle evasion path Phase 7/8 built
+    those scope gates to prevent. The fix restricts what demo_mode (not local/ci) may mint;
+    these tests pin that restriction, not just that the router mounts.
+    """
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_demo_mode_mounts_the_route_outside_local_and_ci(self, environment: str) -> None:
+        settings = _deployed_settings(environment, demo_mode=True)
+        app = create_app(settings)
+        app.state.rate_limiter = PermissiveLimiter()
+        with TestClient(app) as client:
+            response = client.get("/openapi.json")
+        assert "/auth/demo-token" in response.json()["paths"]
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_demo_mode_defaults_to_off(self, environment: str) -> None:
+        """Constructing Settings without demo_mode keeps the Phase 9.5 behaviour unchanged."""
+        settings = _deployed_settings(environment)
+        assert settings.demo_mode is False
+        app = create_app(settings)
+        app.state.rate_limiter = PermissiveLimiter()
+        with TestClient(app) as client:
+            response = client.post("/auth/demo-token", json={"persona": "analyst"})
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_demo_mode_refuses_the_analyst_persona(self, environment: str) -> None:
+        """The blocking finding: demo_mode must not let an anonymous caller reach explain/rings
+        scope, however the account id is set."""
+        settings = _deployed_settings(environment, demo_mode=True)
+        app = create_app(settings)
+        app.state.rate_limiter = PermissiveLimiter()
+        with TestClient(app) as client:
+            response = client.post("/auth/demo-token", json={"persona": "analyst"})
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_demo_mode_refuses_an_account_id_outside_the_allowlist(
+        self, environment: str
+    ) -> None:
+        """demo_account_ids defaults to empty, so demo_mode alone mints nothing until an
+        operator explicitly allowlists ids -- fail closed, not fail open."""
+        settings = _deployed_settings(environment, demo_mode=True)
+        assert settings.demo_account_ids == ()
+        app = create_app(settings)
+        app.state.rate_limiter = PermissiveLimiter()
+        with TestClient(app) as client:
+            response = client.post(
+                "/auth/demo-token", json={"persona": "merchant", "account_id": "acct-1"}
+            )
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_demo_mode_mints_a_merchant_token_for_an_allowlisted_account(
+        self, environment: str
+    ) -> None:
+        settings = _deployed_settings(
+            environment, demo_mode=True, demo_account_ids=("acct-1",)
+        )
+        app = create_app(settings)
+        app.state.rate_limiter = PermissiveLimiter()
+        with TestClient(app) as client:
+            response = client.post(
+                "/auth/demo-token", json={"persona": "merchant", "account_id": "acct-1"}
+            )
+        assert response.status_code == 200
+        assert set(response.json()["scopes"]) == {
+            SCOPE_SCORE,
+            SCOPE_TRANSACTIONS_READ,
+            SCOPE_AUDIT_READ,
+        }
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_demo_mode_still_refuses_an_account_id_not_on_the_allowlist(
+        self, environment: str
+    ) -> None:
+        """The allowlist is exact -- being non-empty does not open every account id."""
+        settings = _deployed_settings(
+            environment, demo_mode=True, demo_account_ids=("acct-1",)
+        )
+        app = create_app(settings)
+        app.state.rate_limiter = PermissiveLimiter()
+        with TestClient(app) as client:
+            response = client.post(
+                "/auth/demo-token", json={"persona": "merchant", "account_id": "acct-2"}
+            )
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("environment", ["local", "ci"])
+    def test_the_restriction_never_fires_in_local_or_ci_even_with_demo_mode_set(
+        self, environment: str
+    ) -> None:
+        """demo_mode is redundant in local/ci (the router is already mounted) and must not
+        additionally narrow what a trusted local/ci caller can do."""
+        settings = Settings(
+            environment=environment,  # type: ignore[arg-type]
+            jwt_secret_key=TEST_SIGNING_KEY,
+            entity_anonymization_key="test-only-anonymization-key-not-a-real-secret",
+            razorpay_webhook_secret="test-only-webhook-secret-not-a-real-secret",
+            demo_mode=True,
+        )
+        app = create_app(settings)
+        app.state.rate_limiter = PermissiveLimiter()
+        with TestClient(app) as client:
+            response = client.post("/auth/demo-token", json={"persona": "analyst"})
+        assert response.status_code == 200
+
+    def test_reject_placeholder_secret_outside_local_is_unaffected_by_demo_mode(self) -> None:
+        """Pins the isolation claim in Settings.demo_mode's docstring: the Phase 9.5
+        placeholder-secret refusal keys on `environment` alone, never on this flag."""
+        with pytest.raises(ValueError):
+            Settings(
+                environment="production",
+                jwt_secret_key="dev-only-placeholder-change-me-before-deploy",
+                entity_anonymization_key="a-deployed-anonymization-key-of-sufficient-length",
+                razorpay_webhook_secret="a-deployed-webhook-secret-of-sufficient-length-here",
+                demo_mode=True,
+            )
+
+
 class TestPersonaScoping:
     """The one property this endpoint exists to guarantee: personas map to fixed scope sets."""
 

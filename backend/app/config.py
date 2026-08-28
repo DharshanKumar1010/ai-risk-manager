@@ -70,6 +70,41 @@ class Settings(BaseSettings):
     )
     debug: bool = False
 
+    demo_mode: bool = Field(
+        default=False,
+        description="Independent opt-in that mounts POST /auth/demo-token outside local/ci. "
+        "Deliberately NOT folded into the `environment in (\"local\", \"ci\")` check itself -- "
+        "that check is the Phase 9.5 fix (see app/main.py and app/api/auth.py's module "
+        "docstrings) and every other environment-gated behavior in this file, in particular "
+        "reject_placeholder_secret_outside_local below, must keep meaning exactly what it "
+        "already means regardless of this flag. This only ORs one extra condition onto the "
+        "router mount in app.main.create_app. Defaults to False, same fail-closed default as "
+        "everything else here. "
+        "A security review of the first version of this flag found that granting the full "
+        "local/ci persona set (including 'analyst') to an anonymous internet caller "
+        "reassembles the explain-oracle evasion path Phase 7/8 built explain:read/rings:read "
+        "scope gates to prevent -- see security-checklist item 8.3/8.4. So when this flag (and "
+        "not local/ci) is the only reason the router is mounted, app.api.auth.mint_demo_token "
+        "refuses persona='analyst' outright (403) and restricts persona='merchant' to the "
+        "account ids listed in demo_account_ids below (403 for anything else, and refused by "
+        "default since that list defaults to empty). Turn this on only for a judged demo "
+        "window, and only after setting demo_account_ids to the specific seeded ids the demo "
+        "needs -- never leave it on with an empty allowlist expecting that to be a no-op, and "
+        "turn it back off once the window closes. It does not revoke tokens already minted; "
+        "exposure ends up to DEMO_TOKEN_EXPIRY_SECONDS (30 minutes) after the flag is flipped "
+        "off, not the instant it is flipped.",
+    )
+    demo_account_ids: tuple[str, ...] = Field(
+        default=(),
+        description="The only account ids app.api.auth.mint_demo_token will mint a merchant "
+        "persona token for when demo_mode (and not local/ci) is the reason the router is "
+        "mounted -- see demo_mode above. Empty by default, which refuses every account id: an "
+        "operator must explicitly list the seeded demo accounts (python -m app.data.seed_demo "
+        "prints them) they want the judged demo to use. Not consulted at all in local/ci, "
+        "where every account id remains available as before -- this field exists only to bound "
+        "what an anonymous caller can reach once demo_mode opens the route to the internet.",
+    )
+
     api_title: str = "RiskIQ"
     api_version: str = "0.1.0"
 
