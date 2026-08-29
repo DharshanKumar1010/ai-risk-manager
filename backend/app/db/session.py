@@ -21,10 +21,14 @@ from app.core.security import SCOPE_ANALYST, CurrentPrincipal
 
 @lru_cache
 def get_engine() -> AsyncEngine:
-    """Return the process-wide async engine, creating it on first use."""
+    """Return the process-wide async engine, creating it on first call."""
     settings = get_settings()
+    url = settings.database_url
+    # Render issues postgres:// or postgresql:// — asyncpg needs +asyncpg scheme
+    url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return create_async_engine(
-        settings.database_url,
+        url,
         echo=settings.database_echo,
         pool_pre_ping=True,
     )
