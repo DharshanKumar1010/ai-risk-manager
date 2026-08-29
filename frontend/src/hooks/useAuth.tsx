@@ -24,7 +24,7 @@ interface AuthState {
   merchantAccountId: string | null
   /** `null` while loading, `false` once we know the walkthrough endpoint is unavailable
    * (a deployed instance outside local/ci), `true` once the analyst token is live. */
-  status: 'loading' | 'unavailable' | 'ready'
+  status: 'loading' | 'unavailable' | 'ready' | 'error'
   error: string | null
   /** Returns the minted token directly, not just via `merchantToken` state -- a caller that
    * needs it for an API call in the same handler cannot wait for the next render to see a
