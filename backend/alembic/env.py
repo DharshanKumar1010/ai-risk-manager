@@ -28,16 +28,10 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    """Return the DSN migrations run against.
-
-    ``Settings.alembic_url``, not ``database_url``. The application connects as ``riskiq_app``,
-    which holds SELECT on the corpus tables and SELECT+INSERT on ``audit_log`` and nothing
-    else — it cannot execute the ``CREATE TABLE``, ``GRANT``, ``CREATE POLICY`` or
-    ``ALTER ROLE`` statements these revisions contain. Sharing one variable would make the
-    obvious fix for a failed migration "point DATABASE_URL at the superuser", which is exactly
-    how row-level security stops being enforced.
-    """
-    return get_settings().alembic_url
+    url = get_settings().alembic_url
+    url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
 
 
 def run_migrations_offline() -> None:

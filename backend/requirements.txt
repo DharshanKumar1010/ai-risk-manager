@@ -113,3 +113,5 @@ pre-commit>=4.0,<5.0
 # Not a direct dependency — it ships in the python:3.11-slim base image at a version
 # carrying PYSEC-2026-3447. Pinned forward so `pip-audit` on the built image is clean.
 setuptools>=83.0.0
+
+psycopg2-binary
