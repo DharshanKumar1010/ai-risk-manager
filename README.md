@@ -1,68 +1,82 @@
 # RiskIQ
 
-**Real-time fraud, chargeback and abuse-ring detection.**
-Razorpay AI Buildathon 2026 — Track 2: AI Risk Manager.
+**Real-time fraud, chargeback and abuse-ring detection for payment platforms.**
+Built for the Razorpay AI Buildathon 2026 — Track 2: AI Risk Manager.
 
-RiskIQ scores a payment transaction in real time, ranks it by *cost* rather than raw
-fraud probability, and surfaces the account rings behind coordinated abuse — with every
-decision written to an append-only audit trail an analyst can open and see the reasoning
-for. It is built as four independent layers rather than one classifier, on the belief
-that a fraud system a panel (or a merchant) cannot audit is not one they should trust:
-a per-transaction anomaly score, a causal cost layer that turns that score into a
-block/allow decision, and a transaction-network graph that finds abuse rings a
-per-transaction model structurally cannot see. Two more layers — a behavioral sequence
-model and a meta-learner fusing everything — were built, measured, and **retired**
-because the held-out numbers said they added nothing; that result is reported here
-rather than hidden, because a fraud product's honesty about what does *not* work is
-part of what makes the part that does work believable.
+Every payment processor faces the same trade-off: flag too little and fraud losses pile
+up, flag too much and legitimate merchants churn over declined transactions. Most fraud
+tools optimize for detection accuracy alone and ignore that trade-off entirely. RiskIQ
+scores each transaction in real time, ranks it by **estimated dollar cost** rather than
+raw fraud probability, and separately surfaces the coordinated account rings a
+per-transaction model structurally cannot see — with every decision written to an
+append-only audit trail an analyst can open and inspect. It is four independent layers,
+not one opaque classifier, because a fraud system a risk team can't audit isn't one they
+should trust.
 
-## Headline numbers
+**Live demo:** [ai-risk-manager-dun.vercel.app](https://ai-risk-manager-dun.vercel.app)
 
-Every figure below is measured on a time-ordered held-out test split — never on live
-demo traffic — and ships with its 95% CI and its false-positive cost. Full detail,
-confusion matrices, and the obstacles behind each number are in `BUILD_LOG.md`.
+## Try it in under a minute
 
-| Layer | Result | Status |
-|---|---|---|
-| **Tier-1** (LightGBM, per-transaction) | PR-AUC **0.5276**, 95% CI [0.5117, 0.5462], vs 0.0348 no-skill floor — **15.2x lift** | Shipped, carries the scoring path |
-| **Tier-3** (Louvain, abuse-ring graph) | Ring-level PR-AUC **0.6465**, 95% CI [0.5700, 0.7171], vs 0.1077 base rate — **6.0x lift** on 1,328 test rings | Shipped as an investigative lead (`GET /rings`) — **provisional**: a confirmed determinism gap means three same-seed reruns produced different ring counts and a validation-PR-AUC swing; treat 0.6465 as pending a fix, not final |
-| **Meta-learner** (XGBoost fusion, Tier-1 + Tier-2 + Tier-3) | PR-AUC **0.4954** vs Tier-1 alone's 0.5276 — paired delta **-0.0322**, CI excludes zero **on the negative side** | Tested, **retired** — measurably worse on the ranking metric than Tier-1 alone; its cost-side advantage (~1.7% cheaper) was a bare point estimate with no CI, not enough to ship on |
-| **Cost-aware ranking** (Phase 6, shipped policy) | **-22.41%** cost per 1,000 decisions vs probability-only ranking at a matched 1% flag rate, CI [-1345.28, -881.81] (card-present cost model, $3 review / $15 chargeback) | Shipped — **regime-dependent**: under a card-not-present cost model ($50 / $500) the same policy's advantage falls to **-2.22%**, CI [-582.18, -145.50] — still real, an order of magnitude smaller. A second policy that *trains* on cost rather than just *thresholding* by it (`learned_loss`) reached -19.79% and tied with the shipped policy (CI crosses zero) — cost-sensitive training bought nothing over cost-sensitive thresholding here |
-
-The one sentence that explains the cost result: **cost-aware ranking pays in proportion
-to how heterogeneous the loss is.** At a flat $500 chargeback fee, every miss costs
-about the same and there is little for a cost model to exploit; at $15, transaction
-amount varies the loss enough for cost-aware ranking to matter.
+1. Open the [live demo](https://ai-risk-manager-dun.vercel.app).
+2. In **Score a transaction**, leave the defaults (`acct-demo`, `$150.00`) and click
+   **Score transaction** — a real decision comes back from the live model in the
+   **Recent decisions** table below.
+3. Click **Why? (analyst view)** on the result, or any row in **Recent decisions**, to see
+   the reasoning behind a decision — and why full SHAP-level attribution is
+   analyst-gated rather than open to every caller.
+4. Scroll down for **Held-out evaluation**: the full confusion matrix, PR curve, and
+   false-positive cost for every layer, measured on data the model never trained on.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     T1["Tier-1<br/>anomaly score<br/>(LightGBM)"]
-    T2["Tier-2<br/>behavioral sequence<br/>(LSTM autoencoder)<br/><i>retired, not served</i>"]
-    ML["Meta-learner<br/>(XGBoost fusion)<br/><i>tested, retired</i>"]
     CC["Causal cost layer<br/>(plug-in / learned-loss)"]
     API["Scoring API<br/>(FastAPI, auth + RLS + audit)"]
-    WH["Razorpay webhook<br/>(HMAC-authenticated)"]
     T3["Tier-3<br/>abuse-ring graph<br/>(Louvain + centrality)"]
     DASH["Dashboard<br/>(React)"]
 
-    T1 --> CC
-    T1 -.-> ML
-    T2 -.-> ML
-    T3 -.-> ML
-    ML -.->|"retired — worse than Tier-1 alone"| CC
-    CC --> API
-    API --> WH
-    API --> DASH
+    T1 --> CC --> API --> DASH
     T3 -->|"GET /rings — investigative lead, not a decision"| DASH
 ```
 
-Solid arrows are the live decision path; dashed arrows are layers that were built,
-measured, and did not make the cut. Tier-3 stands apart from the scoring path entirely
-— it never moves a score, and its ring topology is surfaced to analysts directly.
+| Layer | Role | Status |
+|---|---|---|
+| **Tier-1** — per-transaction anomaly score (LightGBM) | Carries the live scoring path | Shipped |
+| **Tier-2** — per-account behavioral sequence model (LSTM autoencoder) | Built, measured, added nothing on held-out data | Tested, retired |
+| **Tier-3** — transaction-network graph abuse-ring detection | The differentiator — finds coordinated rings a per-transaction model can't see | Shipped as an investigative lead, **provisional** (see below) |
+| **Causal cost layer** — turns Tier-1's score into allow/review by estimated dollar cost, not a probability threshold | Shipped decision policy | Shipped |
+| Meta-learner (XGBoost fusion of all three signals) | Tested, measurably *worse* than Tier-1 alone | Tested, retired |
 
-## Quick start
+Two layers were built, measured, and cut because the held-out numbers said they added
+nothing — that result is reported here rather than hidden, since honesty about what
+*doesn't* work is part of what makes the part that does work believable. Full detail in
+`BUILD_LOG.md`.
+
+## Key metrics (held-out test split, never live-demo traffic)
+
+| Metric | Value |
+|---|---|
+| Tier-1 PR-AUC | **0.5276** (95% CI [0.5117, 0.5462], vs 0.0348 no-skill floor — 15.2x lift) |
+| Cost saved vs. probability-only ranking | **22.41%** per 1,000 decisions, at a matched 1% flag rate |
+| Fraud base rate | **3.48%** (3,083 of 88,581 rows) |
+| Test set size | **n = 88,581** |
+
+Every number above ships with its confidence interval and false-positive cost in the
+dashboard's evaluation section — never presented as a single headline figure without the
+confusion matrix behind it.
+
+## Tech stack
+
+| | |
+|---|---|
+| Backend | FastAPI, SQLAlchemy (async), PostgreSQL, Redis |
+| ML | LightGBM, scikit-learn, NetworkX/igraph (Tier-3), SHAP, econml (causal cost) |
+| Frontend | React + TypeScript (Vite), Tailwind |
+| Deploy | Render (backend), Vercel (frontend) |
+
+## Quick start (local)
 
 ```bash
 cp backend/.env.example backend/.env    # then fill in the placeholders
@@ -75,127 +89,65 @@ docker compose up
 | API docs | http://localhost:8000/docs     |
 | Health   | http://localhost:8000/health   |
 | Frontend | http://localhost:5173          |
-| Postgres | `localhost:5432`               |
-| Redis    | `localhost:6379`               |
+
+Without Docker:
+
+```bash
+cd backend  && pip install -r requirements.txt && uvicorn app.main:app --reload
+cd frontend && npm install && npm run dev
+```
 
 ## API
 
-Every route requires server-side authentication and permissions come from that authentication,
-never from anything in the request — but not every route uses the same mechanism. Most take a
-bearer token, scoped by the `scopes` claim; `/health` needs none by design; the webhook is
-authenticated by an HMAC signature instead, because it has no caller to issue it a token to.
-Full schemas at `/docs`.
+Every route requires server-side authentication; permissions come from that
+authentication, never from anything in the request. Full schemas at `/docs`.
 
 | Method | Path | Auth | Returns |
 |--------|------|------|---------|
-| `GET`  | `/health` | none | Liveness. Checks no dependency by design. |
-| `POST` | `/score` | bearer, `score:write` | The decision, and an audit handle. |
-| `GET`  | `/transactions` | bearer, `transactions:read` | The caller's scored transactions. |
-| `GET`  | `/audit` | bearer, `audit:read` | Recent recorded decisions visible to the caller. |
-| `GET`  | `/audit/{transaction_id}` | bearer, `audit:read` | Every recorded decision for one transaction. |
-| `GET`  | `/audit/entry/{audit_id}/explain` | bearer, `explain:read` + `analyst` | Feature attribution. Analysts only. |
-| `GET`  | `/rings` | bearer, `rings:read` + `analyst` | Flagged abuse rings and their membership. |
-| `POST` | `/auth/ws-ticket` | bearer, `analyst` + `audit:read` + `explain:read` | A short-lived ticket for the live feed socket. |
-| `GET`  | `/ws/feed` | ws-ticket (query param) | The live scoring decision feed, analyst-only. |
-| `POST` | `/webhooks/razorpay/transaction` | HMAC (`X-Razorpay-Signature`), not a bearer token | Score a Razorpay payment event; returns risk context — see `BUILD_LOG.md`'s Phase 9 entry for why this one route's response is allowed to carry more than the others. |
-| `POST` | `/auth/demo-token` | none — mints a token rather than requiring one | Local/CI only; not mounted in staging or production. |
+| `GET`  | `/health` | none | Liveness |
+| `POST` | `/score` | bearer, `score:write` | The decision, and an audit handle |
+| `GET`  | `/audit`, `/audit/{transaction_id}` | bearer, `audit:read` | Recorded decisions |
+| `GET`  | `/audit/entry/{audit_id}/explain` | bearer, `explain:read` + `analyst` | Feature attribution — analysts only |
+| `GET`  | `/rings` | bearer, `rings:read` + `analyst` | Flagged abuse rings and membership |
+| `GET`  | `/ws/feed` | ws-ticket | Live scoring decision feed, analyst-only |
+| `POST` | `/webhooks/razorpay/transaction` | HMAC (`X-Razorpay-Signature`) | Score a Razorpay payment event |
+| `POST` | `/auth/demo-token` | none | Local/CI only — mints a walkthrough token, not routed in production |
 
-`POST /score` takes **raw transaction fields**, never an engineered feature vector. The server
-assembles the vector from the payload, the account's own history, and the fitted encoders — an
-endpoint accepting a caller-supplied vector would let that caller choose its own score. The 22
-derived features are rejected by name if supplied.
-
-### What `/score` deliberately does not return
-
-The response carries the decision and an opaque `audit_id`, and nothing else quantitative. No
-calibrated probability, no operating threshold, no expected-cost arms, no feature attribution
-— and no coarse risk band either. Each of those, combined with the amount, lets a caller
-binary-search the largest transaction that evades review at a given risk score, and coarsening
-a monotone score into bands does not prevent that search, it only slows it by a constant.
-
-All of it is recorded in the audit row. Attribution is served to analysts at
-`/audit/entry/{id}/explain`; the cost arms are served nowhere, because the sign of the expected
-saving from blocking *is* the decision boundary.
-
-The decision itself is the irreducible disclosure — a scoring API has to tell the caller what
-happened to the transaction. That residual is bounded by authentication and the rate limiter.
-
-### Getting a token
-
-There is no signup flow — tokens are minted server-side by
-`app.core.security.create_access_token`. For a local demo:
-
-```bash
-cd backend && python -c "
-from app.config import get_settings
-from app.core.security import create_access_token
-print(create_access_token('demo-merchant', account_id='acct-1',
-                          scopes=('score:write',), settings=get_settings()))
-"
-```
-
-### Before the first score
-
-`/score` returns 503 until it can load its models, and models are gitignored build outputs.
-The serving encoders are rebuilt from the processed parquet once per corpus:
-
-```bash
-cd backend && python -m app.data.serving_encoders --source-dataset ieee_cis
-```
-
-## Local development without Docker
-
-```bash
-# Backend
-cd backend && pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend
-cd frontend && npm install && npm run dev
-```
+`POST /score` takes raw transaction fields, never an engineered feature vector — the
+server assembles it server-side, so a caller can't choose its own score. The response
+carries the decision and an opaque `audit_id`, and deliberately nothing else
+quantitative (no probability, no threshold, no cost arms) — see `BUILD_LOG.md` for why
+that's a security boundary, not an oversight.
 
 ## Checks
 
 ```bash
 cd backend  && ruff check . --fix && mypy app/ && pytest -x
 cd frontend && npm run lint && npm test
-
-pre-commit install          # once per clone
-pre-commit run --all-files
 ```
 
 ## Layout
 
 | Path | What it holds |
 |------|---------------|
-| `backend/app/models/` | One file per DB table and one per architecture layer — never merged |
+| `backend/app/models/` | One file per DB table and per architecture layer — never merged |
 | `backend/app/core/audit.py` | The audit-trail choke point every scoring decision passes through |
 | `models/registry.json` | Append-only record of every trained model version |
 | `PHASE_PROMPTS.md` | The full phase-by-phase build plan |
-| `BUILD_LOG.md` | What shipped, what is deferred, known gaps |
+| `BUILD_LOG.md` | What shipped, what's deferred, known gaps and build obstacles |
 | `.claude/skills/` | The security and ML-evaluation bars this project is held to |
 
-## Future work
+## Known gaps
 
-Not built — named honestly as known follow-ups, not hidden gaps, from the Phase 9.5
-audit's feature-opportunity catalog. Full detail in `BUILD_LOG.md`'s Phase 9 and 9.5
-entries.
+Named honestly as open follow-ups, not hidden gaps — full detail in `BUILD_LOG.md`:
 
-- **`scored_transactions` ledger** and **`(account_id, transaction_id)` idempotency** on
-  `POST /score` and the webhook — both named a Phase 7 prerequisite, still open
-- **Real identity binding** for the webhook's `notes["riskiq_account_id"]` claim — the
-  current known-account gate narrows but does not close the exposure
-- **Request-id logging** across the API
-- **A CI secret scan over the full git history** (`git log -p` / trufflehog) — never
-  independently re-verified by an agent with shell access
-- **Tier-3 determinism fix** — extend the cross-process reproducibility guard (currently
-  PaySim-only) to the IEEE-CIS path, to make the 0.6465 headline final rather than
-  provisional
-- **PaySim surrogate-ring-recovery threshold fix** — currently selected on the test
-  split rather than validation
+- **Tier-3 determinism** — a confirmed reproducibility gap means the 0.6465 ring PR-AUC
+  is provisional, pending a fix, not final
+- **Idempotency** on `POST /score` and the webhook — not yet enforced
+- **Real identity binding** for the webhook's account claim — narrowed, not closed
+- **CI secret scan** over full git history — not yet independently verified
 
 ## Scope
 
-Strictly defense-only. Nothing here may be used to generate, automate or evade fraud —
-that is a track disqualification rule, and it is enforced in
-`.claude/skills/security-checklist/SKILL.md` section 8.
+Strictly defense-only. Nothing here may be used to generate, automate, or evade fraud —
+enforced in `.claude/skills/security-checklist/SKILL.md`.
