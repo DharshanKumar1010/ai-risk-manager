@@ -65,10 +65,6 @@ export function DecisionTable({ feed }: { feed: AuditFeedState }) {
     )
   }
 
-  if (authStatus === 'error') {
-    return <EmptyPanel>Could not start a reviewer session. Try reloading.</EmptyPanel>
-  }
-
   return (
     <section aria-labelledby="decision-table-heading" className="space-y-3">
       <div className="flex items-center justify-between">

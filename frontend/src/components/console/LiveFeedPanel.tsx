@@ -39,7 +39,6 @@ export function LiveFeedPanel({ onDecision }: { onDecision?: (event: FeedEvent) 
   }, [])
 
   if (authStatus === 'unavailable') return null
-  if (authStatus === 'error') return null
   // demo_mode restricts analyst-token minting to 403 in production, so authStatus can be
   // 'ready' with no analyst token. GET /ws/feed requires analyst scope (it carries
   // risk_probability), so a merchant token cannot substitute -- show why instead of a
