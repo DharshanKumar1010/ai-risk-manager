@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    async function mint() {
+        async function mint() {
       try {
         const response: DemoTokenResponse = await mintDemoToken('analyst')
         if (cancelled) return
@@ -53,19 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         if (cancelled) return
         if (err instanceof ApiError && err.status === 404) {
-          // The walkthrough endpoint is not mounted outside local/ci -- an expected
-          // deployed-instance state, not a failure.
           setStatus('unavailable')
           return
         }
-        if (err instanceof ApiError && err.status === 403) {
-          // Analyst persona refused in demo mode -- merchant scorer still works,
-          // analyst panels will show their own "requires analyst" placeholders.
-          setStatus('ready')
-          return
-        }
-        setError(err instanceof Error ? err.message : 'Could not start a session.')
-        setStatus('error')
+        setStatus('ready')
       }
     }
     void mint()
