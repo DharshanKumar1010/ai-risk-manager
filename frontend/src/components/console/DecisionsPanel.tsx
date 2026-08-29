@@ -10,8 +10,11 @@ import { useAuth } from '@/hooks/useAuth'
  * feed needing to know `AuditEntryResponse`'s shape (it doesn't; see `LiveFeedPanel`'s comment).
  */
 export function DecisionsPanel() {
-  const { analystToken } = useAuth()
-  const feed = useAuditFeed(analystToken)
+  // Falls back to the merchant token when no analyst token is available (e.g. demo_mode
+  // restricts analyst minting in production) -- GET /audit only requires audit:read, which
+  // merchant persona also holds, just account-scoped instead of estate-wide.
+  const { analystToken, merchantToken } = useAuth()
+  const feed = useAuditFeed(analystToken ?? merchantToken)
 
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">

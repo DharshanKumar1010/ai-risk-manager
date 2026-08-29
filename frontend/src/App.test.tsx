@@ -34,11 +34,15 @@ describe('App', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled())
   })
 
-  it('reports a session error rather than crashing when the backend is unreachable', async () => {
+  it('renders the empty decisions table rather than crashing when the backend is unreachable', async () => {
     render(<App />)
 
+    // No analyst token (mint failed) and no merchant token (never minted in this test) --
+    // the decisions table falls back to its ordinary empty state instead of an error screen.
     await waitFor(() =>
-      expect(screen.getByText(/could not start a reviewer session/i)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/no transactions scored in this window yet/i),
+      ).toBeInTheDocument(),
     )
   })
 })

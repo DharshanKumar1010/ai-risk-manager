@@ -27,14 +27,21 @@ interface ExplainModalProps {
 export function ExplainModal({ entry, onClose }: ExplainModalProps) {
   const { analystToken } = useAuth()
   const [explanation, setExplanation] = useState<ExplanationResponse | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'forbidden' | 'error'>(
-    'idle',
-  )
+  const [status, setStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'forbidden' | 'no-token' | 'error'
+  >('idle')
 
   useEffect(() => {
-    if (entry === null || analystToken === null) {
+    if (entry === null) {
       setExplanation(null)
       setStatus('idle')
+      return
+    }
+    if (analystToken === null) {
+      // demo_mode restricts analyst-token minting to 403 in production -- distinct from
+      // 'forbidden' (a merchant token was tried and refused): here there is no token to try.
+      setExplanation(null)
+      setStatus('no-token')
       return
     }
     let cancelled = false
@@ -113,6 +120,12 @@ export function ExplainModal({ entry, onClose }: ExplainModalProps) {
             )}
             {status === 'error' && (
               <p className="text-text-faint">Attribution is unavailable right now.</p>
+            )}
+            {status === 'no-token' && (
+              <p className="text-text-faint">
+                Attribution requires reviewer access, which this demo instance does not grant
+                automatically — not available here.
+              </p>
             )}
             {status === 'ready' && explanation !== null && (
               <div className="space-y-3">

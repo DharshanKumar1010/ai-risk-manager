@@ -40,6 +40,18 @@ export function LiveFeedPanel({ onDecision }: { onDecision?: (event: FeedEvent) 
 
   if (authStatus === 'unavailable') return null
   if (authStatus === 'error') return null
+  // demo_mode restricts analyst-token minting to 403 in production, so authStatus can be
+  // 'ready' with no analyst token. GET /ws/feed requires analyst scope (it carries
+  // risk_probability), so a merchant token cannot substitute -- show why instead of a
+  // permanently-stuck "connecting…" indicator.
+  if (authStatus === 'ready' && analystToken === null) {
+    return (
+      <p className="font-sans text-xs text-text-faint">
+        Live feed requires reviewer (analyst) access, which this demo instance does not grant
+        automatically — not available here.
+      </p>
+    )
+  }
 
   return (
     <section aria-labelledby="live-feed-heading" className="space-y-3">
