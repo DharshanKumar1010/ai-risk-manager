@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /srv
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl build-essential \
+    && apt-get install -y --no-install-recommends curl build-essential unzip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
