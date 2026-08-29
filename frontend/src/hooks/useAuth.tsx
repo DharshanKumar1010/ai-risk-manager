@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [merchantToken, setMerchantToken] = useState<string | null>(null)
   const [merchantAccountId, setMerchantAccountId] = useState<string | null>(null)
   const [status, setStatus] = useState<AuthState['status']>('loading')
-  const [error, setError] = useState<string | null>(null)
+  const [error] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
