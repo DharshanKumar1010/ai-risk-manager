@@ -42,8 +42,19 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
     <dialog
       ref={ref}
       aria-labelledby="dialog-title"
+      onClick={(event) => {
+        // A click that lands on the <dialog> element itself (not on the content wrapper
+        // below) is a click on the browser's own ::backdrop area -- `<dialog>` has no built-in
+        // click-outside-to-close, so this is the standard way to add it.
+        if (event.target === ref.current) onClose()
+      }}
       className={cx(
-        'w-full max-w-2xl rounded-console border border-border bg-surface p-0 text-text',
+        // `m-auto` restores the native <dialog>'s own centering, which Tailwind Preflight's
+        // universal `margin: 0` reset (an author-origin rule, so it wins over the UA
+        // stylesheet's `margin: auto` regardless of specificity) otherwise wipes out --
+        // without it the dialog renders pinned to the viewport's top-left corner instead of
+        // centered, confirmed against a real browser, not just the jsdom shim.
+        'm-auto w-full max-w-2xl rounded-console border border-border bg-surface p-0 text-text',
         'backdrop:bg-bg/70',
         className,
       )}

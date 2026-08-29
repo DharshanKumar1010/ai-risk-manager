@@ -1,11 +1,13 @@
 import { useId, useState, type FormEvent } from 'react'
 
-import { ExplainModal } from '@/components/console/ExplainModal'
+import { ScoreExplainModal } from '@/components/scoring/ScoreExplainModal'
 import { DecisionBadge, DegradedBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Spinner } from '@/components/ui/Spinner'
 import { useAuth } from '@/hooks/useAuth'
-import { ApiError, getAuditTrail, postScore } from '@/lib/api'
-import type { AuditEntryResponse, ScoreResponse } from '@/types/api'
+import { ApiError, postScore } from '@/lib/api'
+import { formatAmount, formatDateTime } from '@/lib/format'
+import type { ScoreResponse } from '@/types/api'
 
 /**
  * A minimal, fixed transaction shape (IEEE-CIS's own smallest valid raw-column set -- the same
@@ -27,14 +29,13 @@ function randomTransactionId(): string {
  * app/api/score.py and app/api/audit.py actually enforce. See useAuth's module docstring for
  * why neither token is persisted.
  *
- * The "why" step re-fetches the real audit row via `GET /audit/{transaction_id}` rather than
- * reusing anything from `ScoreResponse` -- the merchant response carries no
- * `model_versions`/`feature_version` to build one from, and inventing those fields here would
- * put fabricated data next to a real decision. `ExplainModal` is the same component
- * `DecisionTable` opens on a row click; this widget does not duplicate it.
+ * The "why" button opens `ScoreExplainModal` directly off this widget's own `result` --
+ * `ScoreResponse` already carries `audit_id`, so no extra fetch is needed to get one, and the
+ * button stays enabled regardless of whether an analyst token is available (demo_mode 403s
+ * analyst-token minting in production, which used to leave this button permanently disabled).
  */
 export function ScoringWidget() {
-  const { mintMerchantToken, analystToken } = useAuth()
+  const { mintMerchantToken } = useAuth()
   const accountFieldId = useId()
   const amountFieldId = useId()
 
@@ -43,14 +44,14 @@ export function ScoringWidget() {
   const [status, setStatus] = useState<'idle' | 'scoring' | 'scored' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ScoreResponse | null>(null)
-  const [explainEntry, setExplainEntry] = useState<AuditEntryResponse | null>(null)
-  const [explainStatus, setExplainStatus] = useState<'idle' | 'loading'>('idle')
+  const [explainOpen, setExplainOpen] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     setStatus('scoring')
     setError(null)
     setResult(null)
+    setExplainOpen(false)
     try {
       const merchantToken = await mintMerchantToken(accountId)
       const response = await postScore(
@@ -68,21 +69,6 @@ export function ScoringWidget() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not score this transaction.')
       setStatus('error')
-    }
-  }
-
-  async function handleExplain(): Promise<void> {
-    if (result === null || analystToken === null) return
-    setExplainStatus('loading')
-    try {
-      const trail = await getAuditTrail(result.transaction_id, analystToken)
-      const entry =
-        trail.entries.find((candidate) => candidate.audit_id === result.audit_id) ??
-        trail.entries[0] ??
-        null
-      setExplainEntry(entry)
-    } finally {
-      setExplainStatus('idle')
     }
   }
 
@@ -107,7 +93,7 @@ export function ScoringWidget() {
             value={accountId}
             onChange={(event) => setAccountId(event.target.value)}
             required
-            className="rounded-console border border-border bg-surface px-2 py-1.5 font-mono text-sm text-text"
+            className="rounded-console border border-border bg-surface px-2 py-1.5 font-mono text-sm text-text focus-visible:border-border-strong"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -121,10 +107,11 @@ export function ScoringWidget() {
             inputMode="decimal"
             pattern="[0-9]*\.?[0-9]*"
             required
-            className="w-32 rounded-console border border-border bg-surface px-2 py-1.5 font-mono text-sm text-text"
+            className="w-32 rounded-console border border-border bg-surface px-2 py-1.5 font-mono text-sm text-text focus-visible:border-border-strong"
           />
         </div>
         <Button type="submit" disabled={status === 'scoring'}>
+          {status === 'scoring' && <Spinner />}
           {status === 'scoring' ? 'Scoring…' : 'Score transaction'}
         </Button>
       </form>
@@ -136,26 +123,44 @@ export function ScoringWidget() {
       )}
 
       {result && (
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-3 rounded-console border border-border bg-surface p-3">
+        <div className="space-y-2 rounded-console border border-border bg-surface p-4">
+          <div className="flex flex-wrap items-center gap-3">
             <DecisionBadge decision={result.decision} />
             {result.degraded && <DegradedBadge />}
-            <span className="font-mono text-xs text-text-faint">{result.transaction_id}</span>
-            <Button
-              variant="ghost"
-              onClick={() => void handleExplain()}
-              disabled={explainStatus === 'loading' || analystToken === null}
-            >
+            <Button variant="secondary" onClick={() => setExplainOpen(true)}>
               Why? (analyst view)
             </Button>
           </div>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs sm:grid-cols-4">
+            <div>
+              <dt className="font-sans text-text-faint">Transaction</dt>
+              <dd className="text-text">{result.transaction_id}</dd>
+            </div>
+            <div>
+              <dt className="font-sans text-text-faint">Account</dt>
+              <dd className="text-text">{accountId}</dd>
+            </div>
+            <div>
+              <dt className="font-sans text-text-faint">Amount</dt>
+              <dd className="text-text tabular-nums">{formatAmount(amount)}</dd>
+            </div>
+            <div>
+              <dt className="font-sans text-text-faint">Scored at</dt>
+              <dd className="text-text">{formatDateTime(result.decided_at)}</dd>
+            </div>
+          </dl>
           <p className="font-sans text-xs text-text-faint">
             A live demo decision on this transaction, not a held-out evaluation result.
           </p>
         </div>
       )}
 
-      <ExplainModal entry={explainEntry} onClose={() => setExplainEntry(null)} />
+      <ScoreExplainModal
+        result={explainOpen ? result : null}
+        accountId={accountId}
+        amount={amount}
+        onClose={() => setExplainOpen(false)}
+      />
     </section>
   )
 }

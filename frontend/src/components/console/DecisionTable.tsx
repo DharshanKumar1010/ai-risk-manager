@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { DataTable, type DataTableColumn } from '@/components/ui/DataTable'
 import { DecisionBadge, DegradedBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Spinner } from '@/components/ui/Spinner'
 import { ExplainModal } from '@/components/console/ExplainModal'
 import type { AuditFeedState } from '@/hooks/useAuditFeed'
 import { useAuth } from '@/hooks/useAuth'
@@ -87,7 +88,10 @@ export function DecisionTable({ feed }: { feed: AuditFeedState }) {
       )}
 
       {(status === 'loading' && entries.length === 0) || authStatus === 'loading' ? (
-        <EmptyPanel>Loading recent decisions…</EmptyPanel>
+        <EmptyPanel>
+          <Spinner className="mb-2" />
+          <span className="block">Loading recent decisions…</span>
+        </EmptyPanel>
       ) : (
         <DataTable
           columns={COLUMNS}

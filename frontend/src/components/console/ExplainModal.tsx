@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react'
-
 import { Badge, DecisionBadge } from '@/components/ui/Badge'
 import { Dialog } from '@/components/ui/Dialog'
 import { useAuth } from '@/hooks/useAuth'
-import { ApiError, getExplanation } from '@/lib/api'
+import { useExplanation, type ExplanationStatus } from '@/hooks/useExplanation'
 import { formatPercent } from '@/lib/format'
 import type { AuditEntryResponse, ExplanationResponse } from '@/types/api'
 
@@ -26,44 +24,7 @@ interface ExplainModalProps {
  */
 export function ExplainModal({ entry, onClose }: ExplainModalProps) {
   const { analystToken } = useAuth()
-  const [explanation, setExplanation] = useState<ExplanationResponse | null>(null)
-  const [status, setStatus] = useState<
-    'idle' | 'loading' | 'ready' | 'forbidden' | 'no-token' | 'error'
-  >('idle')
-
-  useEffect(() => {
-    if (entry === null) {
-      setExplanation(null)
-      setStatus('idle')
-      return
-    }
-    if (analystToken === null) {
-      // demo_mode restricts analyst-token minting to 403 in production -- distinct from
-      // 'forbidden' (a merchant token was tried and refused): here there is no token to try.
-      setExplanation(null)
-      setStatus('no-token')
-      return
-    }
-    let cancelled = false
-    setStatus('loading')
-    getExplanation(entry.audit_id, analystToken)
-      .then((response) => {
-        if (cancelled) return
-        setExplanation(response)
-        setStatus('ready')
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        if (err instanceof ApiError && err.status === 403) {
-          setStatus('forbidden')
-          return
-        }
-        setStatus('error')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [entry, analystToken])
+  const { status, explanation } = useExplanation(entry?.audit_id ?? null, analystToken)
 
   return (
     <Dialog
@@ -104,44 +65,60 @@ export function ExplainModal({ entry, onClose }: ExplainModalProps) {
             )}
           </dl>
 
-          <div className="border-t border-border pt-4">
-            <h3 className="mb-2 font-sans text-xs font-semibold uppercase tracking-wide text-text-faint">
-              Why (analyst view)
-            </h3>
-            {status === 'loading' && (
-              <p className="text-text-faint">Loading attribution…</p>
-            )}
-            {status === 'forbidden' && (
-              <p className="text-signal-review">
-                This view requires an analyst token. A merchant integration cannot see why a
-                decision was made — that is the access-control boundary this endpoint enforces,
-                not a bug in this demo.
-              </p>
-            )}
-            {status === 'error' && (
-              <p className="text-text-faint">Attribution is unavailable right now.</p>
-            )}
-            {status === 'no-token' && (
-              <p className="text-text-faint">
-                Attribution requires reviewer access, which this demo instance does not grant
-                automatically — not available here.
-              </p>
-            )}
-            {status === 'ready' && explanation !== null && (
-              <div className="space-y-3">
-                <div>
-                  <span className="text-text-faint">Calibrated probability: </span>
-                  <span className="font-mono tabular-nums">
-                    {formatPercent(explanation.risk_probability)}
-                  </span>
-                </div>
-                <FeatureBars features={explanation.top_features} />
-              </div>
-            )}
-          </div>
+          <AttributionPanel status={status} explanation={explanation} />
         </div>
       )}
     </Dialog>
+  )
+}
+
+/**
+ * The "Why (analyst view)" attribution block, shared by `ExplainModal` and
+ * `ScoreExplainModal` -- both drive the same `useExplanation` states off the same
+ * `GET /audit/entry/{auditId}/explain` route, just triggered from a different `audit_id`
+ * source (a fetched `AuditEntryResponse` vs. a live `ScoreResponse`).
+ */
+export function AttributionPanel({
+  status,
+  explanation,
+}: {
+  status: ExplanationStatus
+  explanation: ExplanationResponse | null
+}) {
+  return (
+    <div className="border-t border-border pt-4">
+      <h3 className="mb-2 font-sans text-xs font-semibold uppercase tracking-wide text-text-faint">
+        Why (analyst view)
+      </h3>
+      {status === 'loading' && <p className="text-text-faint">Loading attribution…</p>}
+      {status === 'forbidden' && (
+        <p className="text-signal-review">
+          This view requires an analyst token. A merchant integration cannot see why a decision
+          was made — that is the access-control boundary this endpoint enforces, not a bug in
+          this demo.
+        </p>
+      )}
+      {status === 'error' && (
+        <p className="text-text-faint">Attribution is unavailable right now.</p>
+      )}
+      {status === 'no-token' && (
+        <p className="text-text-faint">
+          Full analyst reasoning (SHAP values, feature contributions, ring membership) requires
+          analyst-role access — restricted in this demo for fraud-prevention reasons.
+        </p>
+      )}
+      {status === 'ready' && explanation !== null && (
+        <div className="space-y-3">
+          <div>
+            <span className="text-text-faint">Calibrated probability: </span>
+            <span className="font-mono tabular-nums">
+              {formatPercent(explanation.risk_probability)}
+            </span>
+          </div>
+          <FeatureBars features={explanation.top_features} />
+        </div>
+      )}
+    </div>
   )
 }
 

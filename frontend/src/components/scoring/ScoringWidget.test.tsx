@@ -2,11 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ScoringWidget } from '@/components/scoring/ScoringWidget'
-import type { AuditEntryResponse, AuditListResponse, ScoreResponse } from '@/types/api'
+import type { ScoreResponse } from '@/types/api'
 
 const mockUseAuth = vi.fn()
 const mockPostScore = vi.fn()
-const mockGetAuditTrail = vi.fn()
 const mockGetExplanation = vi.fn()
 
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => mockUseAuth() }))
@@ -15,7 +14,6 @@ vi.mock('@/lib/api', async () => {
   return {
     ...actual,
     postScore: (...args: unknown[]) => mockPostScore(...args),
-    getAuditTrail: (...args: unknown[]) => mockGetAuditTrail(...args),
     getExplanation: (...args: unknown[]) => mockGetExplanation(...args),
   }
 })
@@ -29,29 +27,14 @@ const SCORE_RESPONSE: ScoreResponse = {
   model_version: 'tier1-v3',
 }
 
-const AUDIT_ENTRY: AuditEntryResponse = {
-  audit_id: 42,
-  transaction_id: 'demo-abc123',
-  account_id: 'acct-demo',
-  decided_at: '2026-08-26T12:00:00Z',
-  decision: 'review',
-  model_versions: { tier1: 'tier1-v3' },
-  feature_version: 'fv_1',
-  degraded: false,
-  degraded_reason: null,
-}
-
 describe('ScoringWidget', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     mockUseAuth.mockReturnValue({
       mintMerchantToken: vi.fn().mockResolvedValue('merchant-token'),
       analystToken: 'analyst-token',
     })
     mockPostScore.mockResolvedValue(SCORE_RESPONSE)
-    mockGetAuditTrail.mockResolvedValue({
-      transaction_id: 'demo-abc123',
-      entries: [AUDIT_ENTRY],
-    } satisfies AuditListResponse)
     mockGetExplanation.mockResolvedValue({
       audit_id: 42,
       transaction_id: 'demo-abc123',
@@ -65,7 +48,6 @@ describe('ScoringWidget', () => {
   })
 
   it('scores a transaction with a merchant token and shows only the decision', async () => {
-    
     render(<ScoringWidget />)
 
     fireEvent.click(screen.getByRole('button', { name: /score transaction/i }))
@@ -79,8 +61,7 @@ describe('ScoringWidget', () => {
     expect(screen.queryByText(/62/)).not.toBeInTheDocument()
   })
 
-  it('fetches the real audit row before opening the explain view, never fabricating one', async () => {
-    
+  it('opens the explain modal off the score response directly, with no audit-trail fetch first', async () => {
     render(<ScoringWidget />)
 
     fireEvent.click(screen.getByRole('button', { name: /score transaction/i }))
@@ -88,15 +69,33 @@ describe('ScoringWidget', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /why\?/i }))
 
-    await waitFor(() =>
-      expect(mockGetAuditTrail).toHaveBeenCalledWith('demo-abc123', 'analyst-token'),
-    )
+    await waitFor(() => expect(mockGetExplanation).toHaveBeenCalledWith(42, 'analyst-token'))
     expect(await screen.findByText(/calibrated probability/i)).toBeInTheDocument()
+  })
+
+  it('keeps the why button enabled and shows the access-restricted message when no analyst token is available', async () => {
+    mockUseAuth.mockReturnValue({
+      mintMerchantToken: vi.fn().mockResolvedValue('merchant-token'),
+      analystToken: null,
+    })
+    render(<ScoringWidget />)
+
+    fireEvent.click(screen.getByRole('button', { name: /score transaction/i }))
+    await screen.findByText('review')
+
+    const whyButton = screen.getByRole('button', { name: /why\?/i })
+    expect(whyButton).toBeEnabled()
+    fireEvent.click(whyButton)
+
+    expect(mockGetExplanation).not.toHaveBeenCalled()
+    expect(
+      await screen.findByText(/restricted in this demo for fraud-prevention reasons/i),
+    ).toBeInTheDocument()
   })
 
   it('reports a scoring failure instead of crashing', async () => {
     mockPostScore.mockRejectedValueOnce(new Error('boom'))
-    
+
     render(<ScoringWidget />)
 
     fireEvent.click(screen.getByRole('button', { name: /score transaction/i }))
