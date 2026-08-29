@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-        async function mint() {
+    async function mint() {
       try {
         const response: DemoTokenResponse = await mintDemoToken('analyst')
         if (cancelled) return
@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setStatus('unavailable')
           return
         }
+        // Any non-404 failure (403 in demo mode, network error, etc.) — proceed without analyst token
         setStatus('ready')
       }
     }
