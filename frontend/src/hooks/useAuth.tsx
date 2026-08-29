@@ -58,6 +58,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setStatus('unavailable')
           return
         }
+        if (err instanceof ApiError && err.status === 403) {
+          // Analyst persona refused in demo mode -- merchant scorer still works,
+          // analyst panels will show their own "requires analyst" placeholders.
+          setStatus('ready')
+          return
+        }
         setError(err instanceof Error ? err.message : 'Could not start a session.')
         setStatus('error')
       }
