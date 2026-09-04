@@ -74,7 +74,13 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-ra --strict-markers --strict-config"
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # starlette's TestClient still touches the deprecated anyio.abc.BlockingPortal alias --
+    # an upstream compatibility lag between starlette and anyio, not anything this project's
+    # own code does. Narrowly matched on the exact message so every other warning still errors.
+    "ignore:The anyio\\.abc\\.BlockingPortal alias is deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["app"]
