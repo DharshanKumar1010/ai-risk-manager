@@ -211,9 +211,10 @@ class Settings(BaseSettings):
     # --- Serving ---------------------------------------------------------------------
     scoring_source_dataset: Literal["ieee_cis", "paysim"] = Field(
         default="ieee_cis",
-        description="Which corpus's models the scoring endpoint serves. Only ieee_cis has a "
-        "full four-layer stack; PaySim's Tier-1 is a simulator artefact and its Tier-3 "
-        "abstains on every test transaction, so it is not a servable default.",
+        description="Which corpus's models the scoring endpoint serves. Only ieee_cis has "
+        "trained artefacts across every layer (tier1/tier2/tier3/meta-learner); PaySim's "
+        "Tier-1 is a simulator artefact and its Tier-3 abstains on every test transaction, "
+        "so it is not a servable default.",
     )
     tier3_timeout_ms: int = Field(
         default=50,

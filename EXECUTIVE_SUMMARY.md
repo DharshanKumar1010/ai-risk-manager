@@ -5,7 +5,7 @@ number's citation, and the phase-by-phase obstacle log live in `BUILD_LOG.md`.
 
 ## What this is
 
-A four-layer fraud, chargeback and abuse-ring decisioning system: a per-transaction
+A three-layer fraud, chargeback and abuse-ring decisioning system: a per-transaction
 anomaly score, a causal cost layer that turns that score into a block/allow decision
 by its *dollar* consequence rather than its raw probability, and a transaction-network
 graph that finds coordinated abuse rings a per-transaction model cannot see by

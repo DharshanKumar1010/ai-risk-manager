@@ -25,8 +25,10 @@ deliberately **not** in the decision path — registry entry ``meta-learner-xgbo
 excluding zero (named by ``model_id``, not by position -- Phase 9.5 found the previous
 positional reference, "registry entry 25", had already drifted off by one against the
 append-only file it named), and ``app/models/README.md`` says
-in as many words that it is not recommended for serving. Serving it anyway to satisfy a
-four-layer description would be choosing the architecture diagram over the measurement.
+in as many words that it is not recommended for serving. Serving it anyway to satisfy the
+original four-layer design description would be choosing the architecture diagram over the
+measurement -- the shipped decisioning path is three layers (Tier-1, Tier-3, causal cost)
+precisely because that measurement said so.
 
 What Tier-3 does here, stated plainly: it annotates the audit record and feeds ``GET /rings``.
 It does not move the decision, because Phase 5's ablation measured its contribution to the

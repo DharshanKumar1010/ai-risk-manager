@@ -5,12 +5,18 @@ Deadline: September 5, 2026. Bar: a working detector with measured precision/rec
 on a held-out test set, honest false-positive cost, full audit trail, strictly defense-only.
 
 ## What this is
-A four-layer fraud/risk decisioning system, not a single classifier:
+A three-layer fraud/risk decisioning system, not a single classifier:
 1. **Tier-1** — real-time per-transaction anomaly score (Isolation Forest / LightGBM)
-2. **Tier-2** — per-account behavioral sequence model (LSTM Autoencoder)
-3. **Tier-3** — transaction-network graph abuse-ring detection (the differentiator)
-4. **Meta-learner** — XGBoost fusing all three signals, with SHAP explanations
-5. **Causal cost layer** — estimates false-positive cost per decision (DR-Learner style)
+2. **Tier-3** — transaction-network graph abuse-ring detection (the differentiator)
+3. **Causal cost layer** — estimates false-positive cost per decision (DR-Learner style),
+   ranking by dollar impact rather than raw probability
+
+Two more layers were also built and measured against this plan — **Tier-2**, a per-account
+behavioral sequence model (LSTM Autoencoder), and a **meta-learner** (XGBoost) fusing all
+three signals — and both were **retired**: the held-out numbers said they added nothing
+(meta-learner) or didn't clear the bar to ship (Tier-2). Their model files stay in the repo
+as measured, documented negatives, not dead weight to delete — see `EXECUTIVE_SUMMARY.md`
+and `BUILD_LOG.md` for the numbers behind that call.
 
 Full spec and phase-by-phase build prompts live in `PHASE_PROMPTS.md`. Always confirm
 which phase we're on before starting work, and don't skip ahead — each phase's

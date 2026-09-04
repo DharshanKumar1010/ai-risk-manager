@@ -23,8 +23,9 @@ export function Hero() {
           RiskIQ
         </h1>
         <p className="mt-2 max-w-2xl font-sans text-sm text-text-muted">
-          Real-time fraud, chargeback and abuse-ring detection: a four-layer decisioning system
-          with a causal cost layer on top, not a single classifier. The figures below are
+          Real-time fraud, chargeback and abuse-ring detection: a three-layer decisioning
+          system — anomaly score, abuse-ring graph, and a causal cost layer — not a single
+          classifier. The figures below are
           measured on the held-out test split -- see "Held-out evaluation" further down for the
           full confusion matrix and false-positive cost behind each one.
         </p>

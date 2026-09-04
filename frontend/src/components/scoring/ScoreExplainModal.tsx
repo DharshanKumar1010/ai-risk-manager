@@ -63,8 +63,8 @@ export function ScoreExplainModal({ result, accountId, amount, onClose }: ScoreE
           </dl>
 
           <p className="text-text-muted">
-            This transaction was scored by a four-layer system: Tier-1 anomaly detection →
-            Tier-2 chargeback model → Tier-3 abuse-ring graph → Tier-4 causal cost ranker.
+            This transaction was scored by a three-layer system: Tier-1 anomaly detection →
+            Tier-3 abuse-ring graph → causal cost ranking.
           </p>
 
           <AttributionPanel status={status} explanation={explanation} />
